@@ -35,8 +35,55 @@ results = pga.pga_player_results(
     season=season
 )
 
+collinMorikawa = players[players['first_name'] == 'Collin']
+print(collinMorikawa.head())
+print("\nColumns:")
+print(collinMorikawa.columns.tolist())
+
 shotsgained_shots = pd.read_csv("data/PGA_data_tourlevel.csv")
 print("Columns:", shotsgained_shots.columns.tolist())
 
-#find Rory Mcilroy
-rory_players = shotsgained_shots[shotsgained_shots['first_name'] == 'Rory']
+rory_stats = shotsgained_shots[ #I am trying to find Rory McIlroy's stats in the shotsgained_shots dataframe
+    shotsgained_shots["Player_initial_last"]
+    .astype(str)
+    .str.contains("McIlroy", case=False, na=False)
+].copy()
+
+print(rory_stats.head())
+
+
+rory_average_sg = rory_stats[
+    [
+        "sg_ott",
+        "sg_app",
+        "sg_arg",
+        "sg_putt",
+        "sg_t2g",
+        "sg_total"
+    ]
+].mean()
+
+print("\nRory McIlroy — 2025 Average Strokes Gained")
+print(rory_average_sg)
+
+collin_stats = shotsgained_shots[ #I am trying to find Collin Morikawa's stats in the shotsgained_shots dataframe
+    shotsgained_shots["Player_initial_last"]
+    .astype(str)
+    .str.contains("Morikawa", case=False, na=False)
+].copy()
+
+print(collin_stats.head())
+
+collin_average_sg = collin_stats[
+    [
+        "sg_ott",
+        "sg_app",
+        "sg_arg",
+        "sg_putt",
+        "sg_t2g",
+        "sg_total"
+    ]
+].mean()
+
+print("\nCollin Morikawa — 2025 Average Strokes Gained")
+print(collin_average_sg)
