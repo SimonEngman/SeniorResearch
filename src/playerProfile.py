@@ -73,3 +73,77 @@ player_sg_profiles = pd.DataFrame({
 })  
 print("\nPlayer SG Profiles:")
 print(player_sg_profiles)
+
+#Average distance for each club for Rory McIlroy
+data_distance_rory = {
+    "Club": [
+        "Driver",
+        "3-Wood",
+        "5-Wood",
+        "3-Iron",
+        "4-Iron",
+        "5-Iron",
+        "6-Iron",
+        "7-Iron",
+        "8-Iron",
+        "9-Iron",
+        "Pitching Wedge",
+        "54° Wedge",
+        "58° Wedge",
+    ],
+    "Distance": [
+        330,
+        295,
+        275,
+        260,
+        240,
+        225,
+        210,
+        195,
+        180,
+        165,
+        150,
+        125,
+        105,
+    ]
+}
+
+print("\nRory McIlroy Average Distance by Club:")
+print(pd.DataFrame(data_distance_rory))
+
+#Average distance for each club for Collin Morikawa
+data_distance_collin = {
+    "Club": [
+        "Driver",
+        "3-Wood",
+        "5-Wood",
+        "4-Iron",
+        "5-Iron",
+        "6-Iron",
+        "7-Iron",
+        "8-Iron",
+        "9-Iron",
+        "Pitching Wedge",
+        "51° Wedge",
+        "56° Wedge",
+        "60° Wedge",
+    ],
+    "Distance": [
+        289,
+        269,
+        246,
+        224,
+        205,
+        193,
+        181,
+        165,
+        156,
+        132,
+        120,
+        110,
+        94,
+    ]
+}  
+
+print("\nCollin Morikawa Average Distance by Club:")
+print(pd.DataFrame(data_distance_collin))

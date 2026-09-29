@@ -1,5 +1,9 @@
 import pandas as pd
 import streamlit as st
+import matplotlib.pyplot as plt
+import sys
+sys.path.append("src")
+from playerProfile import data_distance_collin, data_distance_rory
 
 #Load the SG data
 sg_data = pd.read_csv("data/PGA_data_tourlevel.csv")
@@ -67,12 +71,18 @@ sg_chart = pd.DataFrame({
 
 st.header("Strokes Gained Profile")
 
-st.bar_chart(
-    sg_chart,
-    x="Statistic",
-    y="Value"
-)
+fig, ax = plt.subplots()
 
+ax.bar(sg_chart["Statistic"], sg_chart["Value"])
+
+ax.set_xlabel("Statistic")
+ax.set_ylabel("Strokes Gained")
+ax.set_title(f"{player} Strokes Gained Profile")
+
+plt.xticks(rotation=45, ha="right")
+plt.tight_layout()
+
+st.pyplot(fig)
 # Rory vs Collin comparison
 comparison = pd.DataFrame({
     "Statistic": [
@@ -105,13 +115,77 @@ comparison = pd.DataFrame({
 
 st.header("Rory vs. Collin")
 
-st.bar_chart(
-    comparison,
-    x="Statistic",
-    y=["Rory McIlroy", "Collin Morikawa"]
+fig, ax = plt.subplots()
+
+x = range(len(comparison["Statistic"]))
+width = 0.35
+
+ax.bar(
+    [i - width/2 for i in x],
+    comparison["Rory McIlroy"],
+    width,
+    label="Rory McIlroy"
 )
+
+ax.bar(
+    [i + width/2 for i in x],
+    comparison["Collin Morikawa"],
+    width,
+    label="Collin Morikawa"
+)
+
+ax.set_xlabel("Statistic")
+ax.set_ylabel("Strokes Gained")
+ax.set_title("Rory vs. Collin")
+ax.set_xticks(x)
+ax.set_xticklabels(comparison["Statistic"], rotation=45, ha="right")
+ax.legend()
+
+plt.tight_layout()
+
+st.pyplot(fig)
 
 #display the statistics
 st.header (f"{player} — Stroked Gained Statistics")
 for stat, value in profile.items():
    st.metric(stat, f"{value:.3f}")
+
+
+#Displaying the distance data for the selected player
+if player == "Rory McIlroy":
+    distance_data = data_distance_rory
+else:
+    distance_data = data_distance_collin
+
+distance_chart = pd.DataFrame({
+   "Club": list(distance_data["Club"]),
+   "Distance": list(distance_data["Distance"])
+})
+
+st.header(f"{player} — Average Distance by Club")
+fig, ax = plt.subplots(figsize=(10, 6))
+
+ax.barh(
+    distance_chart["Club"],
+    distance_chart["Distance"]
+)
+
+ax.set_xlabel("Average Yardage")
+ax.set_ylabel("Club")
+ax.set_title(f"{player} Average Club Yardages")
+
+# Put the highest-lofted/shortest club at the bottom
+ax.invert_yaxis()
+
+# Display the yardage number at the end of each bar
+for i, value in enumerate(distance_chart["Distance"]):
+    ax.text(
+        value + 2,
+        i,
+        f"{value} yds",
+        va="center"
+    )
+
+plt.tight_layout()
+
+st.pyplot(fig)
