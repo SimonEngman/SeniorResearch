@@ -671,8 +671,18 @@ def calculate_approach_dispersion(approach_shots, targets):
     # Perpendicular distance from the target line
     offline_squared = b**2 - down_target**2
 
-    data["offline_yards"] = np.sqrt(
+    #This could lead to some shots being straight even though they are offline
+    #Therefore, I have commented it out for now
+    """data["offline_yards"] = np.sqrt(
         np.maximum(offline_squared, 0)
+    ) """
+    #The offline distance is now calculated in the next step, but it will be flagged if the triangle is invalid
+    # Flag shots with inconsistent distance measurements
+    data["invalid_triangle"] = offline_squared < -1e-6
+
+    # Keep invalid measurements as "not a number" instead of forcing zero
+    data["offline_yards"] = np.sqrt(
+        offline_squared.where(offline_squared >= -1e-6).clip(lower=0)
     )
 
     # Determine which side of the target line the shot finished
@@ -695,6 +705,8 @@ def calculate_approach_dispersion(approach_shots, targets):
 
     # Remove rows with missing measurements
     data = data.replace([np.inf, -np.inf], np.nan)
+
+    print("Invalid triangles:", data["invalid_triangle"].sum())
 
     data = data.dropna(
         subset=[
@@ -789,6 +801,168 @@ def classify_shot_intent(approach_shots):
 
     return data
 
+#EXPERIMENT - start to plot for group 150 yds - 175yds
+def plot_approach_dispersion(approach_dispersion, player_name, min_distance=150, max_distance=175):
+
+   #Filter the selected distance range
+   #remove potential recovery shots from the analysis
+    data = approach_dispersion[
+        (approach_dispersion["starting_distance"] >= min_distance) &
+        (approach_dispersion["starting_distance"] < max_distance) &
+        (~approach_dispersion["potential_recovery"])
+    ].copy()
+
+    if data.empty:
+        print(f"No approach shots found for {player_name}")
+        return
+
+    # Create scatter plot
+    plt.figure(figsize=(8, 8))
+
+    plt.scatter(
+        data["offline_yards"],
+        data["distance_error_yards"],
+        alpha=0.5,
+        s=25,
+        color="steelblue"
+    )
+
+    # Mark the aim at (0, 0)
+    plt.scatter(
+        0, 0,
+        color="red",
+        marker="x",
+        s=120,
+        linewidths=3,
+        label="Aim"
+    )
+
+    # Reference lines
+    plt.axhline(0, color="gray", linestyle="--", alpha=0.5)
+    plt.axvline(0, color="gray", linestyle="--", alpha=0.5)
+
+    plt.title(
+        f"{player_name} - Approach Dispersion "
+        f"({min_distance}-{max_distance} yards)"
+    )
+
+    plt.xlabel("Offline Distance (yards)")
+    plt.ylabel("Distance Error (yards)")
+
+    # Use the same scale on both axes
+    plt.axis("equal")
+
+    plt.grid(alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+#Function that plots the central 90% of approach shots for a given distance range
+def plot_central_approach_dispersion(approach_dispersion, player_name, min_distance, max_distance):
+
+    # Filter the selected distance range
+    #remove the potential recovery shots from the analysis
+    data = approach_dispersion[
+        (approach_dispersion["starting_distance"] >= min_distance) &
+        (approach_dispersion["starting_distance"] < max_distance) &
+        (~approach_dispersion["potential_recovery"])
+    ].copy()
+
+    #Look if there are any shots in the selected range
+    if data.empty:
+        print(f"No approach shots found for {player_name}")
+        return
+    
+        # Calculate distance of each shot from the hole
+    data["total_error"] = np.sqrt(
+        data["offline_yards"]**2 +
+        data["distance_error_yards"]**2
+    )
+
+    # Find the 90th percentile
+    threshold = data["total_error"].quantile(0.90)
+
+    # Keep central 90% for visualization
+    central = data[
+        data["total_error"] <= threshold
+    ]
+
+    plt.figure(figsize=(8, 8))
+
+    plt.scatter(
+        central["offline_yards"],
+        central["distance_error_yards"],
+        alpha=0.5,
+        s=25,
+        color="steelblue"
+    )
+
+    #Mark aim at 0, 0
+    plt.scatter(
+        0, 0,
+        color="red",
+        marker="x",
+        s=120,
+        linewidths=3,
+        label="Aim"
+    )
+
+    plt.axhline(0, color="gray", linestyle="--", alpha=0.5)
+    plt.axvline(0, color="gray", linestyle="--", alpha=0.5)
+
+    plt.title(
+        f"{player_name} - Central 90% Approach Dispersion "
+        f"({min_distance}-{max_distance} yards)"
+    )
+
+    plt.xlabel("Offline Distance (yards)")
+    plt.ylabel("Distance Error (yards)")
+
+    plt.axis("equal")
+    plt.grid(alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    print(f"\n--- {player_name} Central 90% ---")
+    print("Original shots:", len(data))
+    print("Shots in central 90%:", len(central))
+    print("90% radius:", round(threshold, 2), "yards")
+
+#Calculate statistics on the dispersions for each approach group
+def calculate_approach_group_statistics(approach_dispersion):
+    # Keep standard approach candidates
+    data = approach_dispersion[
+        ~approach_dispersion["potential_recovery"]
+    ].copy()
+
+    # Calculate actual proximity to the hole
+    data["proximity_yards"] = data["remaining_yards"]
+
+    # Create 25-yard distance groups
+    bins = list(range(50, 201, 25))
+
+    data["distance_group"] = pd.cut(
+        data["starting_distance"],
+        bins=bins,
+        right=False
+    )
+
+    # Calculate statistics for each group
+    statistics = data.groupby(
+        "distance_group",
+        observed=True
+    ).agg(
+        shots=("offline_yards", "count"),
+        mean_offline=("offline_yards", "mean"),
+        offline_sd=("offline_yards", "std"),
+        mean_distance_error=("distance_error_yards", "mean"),
+        distance_sd=("distance_error_yards", "std"),
+        average_proximity=("proximity_yards", "mean")
+    )
+
+    return statistics.round(2)
+
 # Main program
 def main():
     for player_name, file_name in players.items():
@@ -852,78 +1026,115 @@ def main():
             targets
         )             
 
-    print(f"\n--- {player_name} Approach Dispersion ---")
+        print(f"\n--- {player_name} Approach Dispersion ---")
 
-    print(
-        approach_dispersion[
-            [
-                "starting_distance",
-                "shot_yards",
-                "remaining_yards",
-                "offline_yards",
-                "distance_error_yards"
-            ]
-        ].head(15).to_string(index=False)
-    )
-
-    print("\nDispersion statistics:")
-    print(
-        approach_dispersion[
-            ["offline_yards", "distance_error_yards"]
-        ].describe()
-    )
-
-    print("Shots analyzed:", len(approach_dispersion))
-
-    approach_dispersion = calculate_approach_dispersion(
-    approach_shots, targets
-    )
-
-    # Classify the shots
-    approach_dispersion = classify_approach_shots(
-        approach_dispersion
-    )
-
-    print(f"\n--- {player_name} Shot Categories ---")
-    print(approach_dispersion["shot_category"].value_counts())
-    approach_dispersion = calculate_approach_dispersion(
-    approach_shots, targets
+        print(
+            approach_dispersion[
+                [
+                    "starting_distance",
+                    "shot_yards",
+                    "remaining_yards",
+                    "offline_yards",
+                    "distance_error_yards"
+                ]
+            ].head(15).to_string(index=False)
         )
 
-    approach_dispersion = classify_shot_intent(
-        approach_dispersion
-    )
+        print("\nDispersion statistics:")
+        print(
+            approach_dispersion[
+                ["offline_yards", "distance_error_yards"]
+            ].describe()
+        )
 
-    #This is just an experiment to see if we can identify potential recovery shots based on distance and offline metrics
-    print(f"\n--- {player_name} Shot Classification ---")
-    print(approach_dispersion["shot_intent"].value_counts())
-    print("POTENTIAL RECOVERY SHOTS:")
+        print("Shots analyzed:", len(approach_dispersion))
 
-    print(
-        approach_dispersion[
-            approach_dispersion["potential_recovery"]
-        ][
-            [
-                "starting_distance",
-                "shot_yards",
-                "remaining_yards",
-                "offline_yards",
-                "progress_ratio"
-            ]
-        ].head(15).to_string(index=False)
-    )
-    # Compare dispersion with and without flagged shots
-    standard_approaches = approach_dispersion[
-    ~approach_dispersion["potential_recovery"]
-    ]
+        approach_dispersion = calculate_approach_dispersion(
+        approach_shots, targets
+        )
 
-    print(f"\n--- {player_name} Standard Approach Statistics ---")
+        # Classify the shots
+        approach_dispersion = classify_approach_shots(
+            approach_dispersion
+        )
 
-    print(
-        standard_approaches[
-            ["offline_yards", "distance_error_yards"]
-        ].describe()
-    )
+        print(f"\n--- {player_name} Shot Categories ---")
+        print(approach_dispersion["shot_category"].value_counts())
+        approach_dispersion = calculate_approach_dispersion(
+        approach_shots, targets
+            )
+
+        approach_dispersion = classify_shot_intent(
+            approach_dispersion
+        )
+        # Calculate statistics for each approach distance group
+        group_statistics = calculate_approach_group_statistics(
+            approach_dispersion
+        )
+
+        print(f"\n--- {player_name} Approach Group Statistics ---")
+        print(group_statistics.to_string())
+
+        #This is just an experiment to see if we can identify potential recovery shots based on distance and offline metrics
+        print(f"\n--- {player_name} Shot Classification ---")
+        print(approach_dispersion["shot_intent"].value_counts())
+        print("POTENTIAL RECOVERY SHOTS:")
+
+        print(
+            approach_dispersion[
+                approach_dispersion["potential_recovery"]
+            ][
+                [
+                    "starting_distance",
+                    "shot_yards",
+                    "remaining_yards",
+                    "offline_yards",
+                    "progress_ratio"
+                ]
+            ].head(15).to_string(index=False)
+        )
+        # Compare dispersion with and without flagged shots
+        standard_approaches = approach_dispersion[
+        ~approach_dispersion["potential_recovery"]
+        ]
+
+        print(f"\n--- {player_name} Standard Approach Statistics ---")
+
+        print(
+            standard_approaches[
+                ["offline_yards", "distance_error_yards"]
+            ].describe()
+        )
+        # Classify potential recovery shots
+        approach_dispersion = classify_shot_intent(
+            approach_dispersion
+        )
+
+        # Plot approach dispersion from 150-175 yards
+        """plot_approach_dispersion(
+            approach_dispersion,
+            player_name,
+            min_distance=150,
+            max_distance=175
+        ) """
+
+        # Plot central 90% approach dispersion from 150-175 yards
+        """plot_central_approach_dispersion(
+            approach_dispersion,
+            player_name,
+            min_distance=150,
+            max_distance=175
+        )"""
+
+        #Plot all different distance groups
+        #6 groups from 50 - 200 yds, 25 yds in between each
+        for min_distance in range(50, 200, 25):
+            max_distance = min_distance + 25
+            #Plot the central 90% dispersion for each group
+            plot_central_approach_dispersion(approach_dispersion, player_name, min_distance, max_distance)
+
+
+
 if __name__ == "__main__":
     main()
 
