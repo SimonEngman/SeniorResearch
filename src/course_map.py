@@ -23,8 +23,8 @@ def load_course_zones():
     # Import the course polygons
     zones = gpd.read_file(COURSE_FILE, layer="course_zones")
 
+    #Make sure that no areas overlap
     # Remove water areas that overlap with out of bounds
-
     ob = zones[zones["zone_type"] == "ob"]
     water_mask = zones["zone_type"] == "water"
 
@@ -36,8 +36,94 @@ def load_course_zones():
         water_mask, "geometry"
     ].apply(lambda geom: geom.difference(ob_area))
 
-    print("OB overlaps removed from water polygons!")
+    #fairway that overlaps with water should be cosidered fairway
+    fairway = zones[zones["zone_type"] == "fairway"]
+    #combine all fairway zones as one
+    fairway_area = fairway.geometry.union_all()
+    #Subtract water area from fairway
+    zones.loc[water_mask, "geometry"] = zones.loc[
+        water_mask, "geometry"
+    ].apply(lambda geom: geom.difference(fairway_area))
+
+    #Green that ovrlaps fairway should be considered Green
+    green = zones[zones["zone_type"] == "green"]
+    green_area = green.geometry.union_all()
+    #Select the fairway polygons
+    fairway_mask = zones["zone_type"] == "fairway"
+    zones.loc[fairway_mask, "geometry"] = zones.loc[
+        fairway_mask, "geometry"
+    ].apply(lambda geom: geom.difference(green_area))
+
+    #Bunker that overlaps fairway should be considered bunker
+    bunker = zones[zones["zone_type"] == "bunker"]
+    bunker_area = bunker.geometry.union_all()
+    zones.loc[fairway_mask, "geometry"] = zones.loc[
+        fairway_mask, "geometry"
+    ].apply(lambda geom: geom.difference(bunker_area))
+
+    #Fairway overlapping rough should be considered fairway
+    rough = zones[zones["zone_type"] == "rough"]
+    rough_area = rough.geometry.union_all()
+    rough_mask = zones["zone_type"] == "rough"
+    zones.loc[rough_mask, "geometry"] = zones.loc[
+        rough_mask, "geometry"
+    ].apply(lambda geom: geom.difference(fairway_area))
+
+    #Trees overlapping rough should be considered trees
+    trees = zones[zones["zone_type"] == "trees"]
+    trees_area = trees.geometry.union_all()
+    zones.loc[rough_mask, "geometry"] = zones.loc[
+        rough_mask, "geometry"
+    ].apply(lambda geom: geom.difference(trees_area))
+    
+    #Trees overlapping OB should be considered trees
+    ob_mask = zones["zone_type"] == "ob"
+    zones.loc[ob_mask, "geometry"] = zones.loc[
+        ob_mask, "geometry"
+    ].apply(lambda geom: geom.difference(trees_area))
+
+    #Fairway overlapping OB should be considered fairway
+    zones.loc[ob_mask, "geometry"] = zones.loc[
+        ob_mask, "geometry"
+    ].apply(lambda geom: geom.difference(fairway_area))
+
+    #Green overlapping water should be considered green
+    zones.loc[water_mask, "geometry"] = zones.loc[
+        water_mask, "geometry"
+    ].apply(lambda geom: geom.difference(green_area))
+
+
+    print("Polygon overlapping have been removed")
+
     return zones
+# Check whether any course polygons still overlap
+def check_overlaps(zones):
+
+    overlap_count = 0
+
+    # Compare every polygon with the polygons after it
+    for i in range(len(zones)):
+        for j in range(i + 1, len(zones)):
+
+            polygon1 = zones.geometry.iloc[i]
+            polygon2 = zones.geometry.iloc[j]
+
+            # Check if the polygons share an actual area
+            overlap = polygon1.intersection(polygon2)
+
+            if overlap.area > 0.000001:
+                zone1 = zones["zone_type"].iloc[i]
+                zone2 = zones["zone_type"].iloc[j]
+
+                print(f"Overlap found: {zone1} and {zone2}")
+                print(f"Overlap area: {overlap.area:.2f}")
+
+                overlap_count += 1
+
+    if overlap_count == 0:
+        print("No overlapping polygon areas found")
+    else:
+        print(f"\nTotal overlapping polygon pairs: {overlap_count}")
 
 #Convert from meters to yards
 def convert_to_yards(zones):
@@ -126,14 +212,15 @@ def classify_landing_zones(landing_x, landing_y, zones_yards):
     #List that will store where each shot land
     landing_results = []
     #Ranking priority of the zones
+    #These priorities match how the overlapping of polygons is handeled
     priority = [
+    "trees",
+    "green",
+    "bunker",
+    "fairway",
     "ob",
     "water",
-    "trees",
-    "bunker",
     "rough",
-    "fairway",
-    "green",
     "tee"
     ]
 
@@ -263,6 +350,8 @@ def main():
     # Load the course zones from QGIS
     zones = load_course_zones()
 
+    #Check for overlapping
+    check_overlaps(zones)
     # Convert course coordinates to yards
     zones_yards = convert_to_yards(zones)
 
@@ -339,7 +428,6 @@ def main():
         aim_y,
         player_name
     )
-
 
 if __name__ == "__main__":
     main()
