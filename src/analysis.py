@@ -343,6 +343,10 @@ def calculate_statistics(tee_shots, player_name):
           round(std_down_hole, 1), "yards")
     print("Offline standard deviation:",
           round(std_offline, 1), "yards")
+    
+#I added this function so that I can import the variable to optimization.py
+def calculate_average_distance(tee_shots):
+    return tee_shots["down_hole_yards"].mean()
 
 
 # Plot full tee-shot dispersion
@@ -367,7 +371,7 @@ def plot_full_dispersion(tee_shots, player_name):
     plt.show()
 
 
-# Plot central 00% tee-shot dispersion
+# Plot central 90% tee-shot dispersion
 def plot_central_dispersion(tee_shots, player_name):
 
     # Average landing position
