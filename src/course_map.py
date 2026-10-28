@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 from shapely import affinity
 from shapely.geometry import Point
+from matplotlib.patches import Ellipse
 
 from analysis import (
     filter_tee_dispersion_by_distance,
@@ -260,6 +261,57 @@ def get_zone_center(zones_yards, zone_type):
 
     # Return the x and y coordinates
     return center.x, center.y
+
+#Plot an ellipse around the 90% dispersion
+def plot_dispersion_elipse(ax, landing_x, landing_y):
+    #Find the center of the shot dispersion
+    center_x = np.mean(landing_x)
+    center_y = np.mean(landing_y)
+
+        # Calculate how the shots are spread in X and Y
+    covariance = np.cov(landing_x, landing_y)
+
+    # Calculate the main directions of the dispersion
+    eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+
+    # Sort the directions from largest spread to smallest
+    order = eigenvalues.argsort()[::-1]
+    eigenvalues = eigenvalues[order]
+    eigenvectors = eigenvectors[:, order]
+
+    # Calculate the angle of the ellipse
+    angle = np.degrees(
+        np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0])
+    )
+
+    # Scale for a theoretical 90% dispersion ellipse
+    #4.605 comes from chi-square distribution
+    #I am using a two dimensional distribution and want to include 90%
+    #For 90%, the probability is 4.605 or below
+    scale = np.sqrt(4.605) 
+
+    # Calculate the width and height
+    width = 2 * scale * np.sqrt(eigenvalues[0])
+    height = 2 * scale * np.sqrt(eigenvalues[1])
+
+    # Create the ellipse
+    ellipse = Ellipse(
+        xy=(center_x, center_y),
+        width=width,
+        height=height,
+        angle=angle,
+        edgecolor="red",
+        facecolor="none",
+        linewidth=1,
+        linestyle="--",
+        label="Dispersion Ellipse"
+    )
+
+    # Add the ellipse to the course map
+    ax.add_patch(ellipse)
+
+
+
 # Plot the course map and player dispersion
 def plot_course_map(
     zones_yards,
@@ -323,6 +375,9 @@ def plot_course_map(
         alpha=0.35,
         label=f"{player_name} Dispersion"
     )
+
+    #Draw the ellipse around the dispersion
+    plot_dispersion_elipse(ax, landing_x, landing_y)
 
     # Plot the target landing center
     ax.scatter(
