@@ -1,5 +1,6 @@
 from collections import Counter
 import numpy as np
+import pandas as pd
 
 from course_map import (
     position_dispersion,
@@ -300,8 +301,8 @@ def main():
     print(f"Playable approach situations: {len(approach_situations)}")
 
     # Display the first 50 approach situations
-    for situation in approach_situations[:50]:
-        print(situation)
+    """for situation in approach_situations[:50]:
+        print(situation)"""
 
     #Plot Rory's dispersion on most fairway hits
     plot_course_map(
@@ -395,6 +396,47 @@ def main():
         "Rory McIlroy - Simulated Approach Shots",
         zoom=100
     )
+
+    #Classify in what zones the approach shots end up:
+    approach_landing_zones = classify_landing_zones(all_approach_x, all_approach_y, zones_yards)
+
+    #count the number of shots ending up in each zone
+    approach_zone_counts = Counter(approach_landing_zones)
+
+    #calculate total number of approach shots
+    total_approaches = len(approach_landing_zones)
+    print(f"Total shots Again: {total_approaches}")
+
+    #Print the result
+    print("Rory Mcilroy - Approach shot statistics")
+    
+    for zone, count in approach_zone_counts.items():
+        percentage = (count / total_approaches) * 100
+        print(f"{zone}: {count} shots ({percentage:.2f}%)")
+
+    #Calculate the distance remaining after approach has been hit
+    approach_remaining_distances = calculate_remaining_distance(
+        np.asarray(all_approach_x),
+        np.asarray(all_approach_y),
+        green_x,
+        green_y
+    )
+
+    print("Remaining Distances After Approach:")
+    print("Total shots:", len(approach_remaining_distances))
+    print(f"Average distance: {np.mean(approach_remaining_distances):.2f} yards")
+    print(f"Minimum distance: {np.min(approach_remaining_distances):.2f} yards")
+    print(f"Maximum distance: {np.max(approach_remaining_distances):.2f} yards")
+
+    #Store the simulated approach in a dataframe
+    approach_results = pd.DataFrame({
+        "landing_zone": approach_landing_zones,
+        "remaining_distance": approach_remaining_distances
+
+    })
+
+    print(approach_results.head(20).to_string(index=False))
+
 
 
     """
