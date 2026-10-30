@@ -506,17 +506,17 @@ def filter_approach_shots(shots):
         (approach_shots["stroke_number"] > 1) | par3_tee
     ].copy()
 
-    # Keep starting distances from 50 to 200 yards
+    # Keep starting distances from 50 to 250 yards
     approach_shots = approach_shots[
         (approach_shots["starting_distance"] >= 50) &
-        (approach_shots["starting_distance"] < 200)
+        (approach_shots["starting_distance"] < 250)
     ].copy()
 
     return approach_shots
 
 def group_approach_shots(approach_shots):
 
-    bins = list(range(50, 201, 25))
+    bins = list(range(50, 251, 25))
 
     approach_shots = approach_shots.copy()
 
@@ -1131,8 +1131,8 @@ def main():
         )"""
 
         #Plot all different distance groups
-        #6 groups from 50 - 200 yds, 25 yds in between each
-        for min_distance in range(50, 200, 25):
+        #8 groups from 50 - 250 yds, 25 yds in between each
+        for min_distance in range(50, 250, 25):
             max_distance = min_distance + 25
             #Plot the central 90% dispersion for each group
             plot_central_approach_dispersion(approach_dispersion, player_name, min_distance, max_distance)

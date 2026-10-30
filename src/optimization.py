@@ -15,7 +15,12 @@ from analysis import(
     calculate_average_distance,
     load_player_data,
     filter_tee_dispersion_by_distance,
-    calculate_dispersion_typdir
+    calculate_dispersion_typdir,
+    filter_approach_shots,
+    group_approach_shots,
+    calculate_approach_dispersion,
+    classify_shot_intent,
+    get_hole_target
 )
 
 #Evaluate the landing zone for a given aimpoint
@@ -66,6 +71,95 @@ def calculate_remaining_distance(landing_x, landing_y, green_x, green_y):
     )
     return remaining_distances
 
+#Returns taht approach can be played only if ball is in rough ot fairway
+def can_play_approach(ladning_zone):
+    if ladning_zone in ["fairway", "rough"]:
+        return True #Approach can be played
+
+    return False #Approach can't be played
+
+def select_approach_group(remaining_distance):
+    #We are using these groupings in analysis.py
+    bins = [
+        (50, 75),
+        (75, 100), 
+        (100, 125), 
+        (125, 150), 
+        (150, 175), 
+        (175, 200), 
+        (200, 225), 
+        (225, 250), 
+    ]
+
+    for lower, upper in bins:
+        if lower <= remaining_distance < upper:
+            return(lower, upper) #returns the lower and upper limit of the group
+    return None #shot could not be classified to a group
+
+#Returns the approach situation
+def get_approach_situations(landing_x, landing_y, landing_zones, remaining_distances):
+    approach_situations = []
+
+    for i in range(len(landing_x)):
+        zone = landing_zones[i]
+        distance = remaining_distances.iloc[i]
+
+        if can_play_approach(zone): #make sure the shot can be played towards the green
+            approach_group = select_approach_group(distance)
+
+            if approach_group is not None: #make sure the zone exist
+                approach_situations.append({ #adds the sitation to the array
+                    "landing_x": landing_x.iloc[i],
+                    "landing_y": landing_y.iloc[i],
+                    "remaining_distance": distance,
+                    "landing_zone": zone,
+                    "approach_group": approach_group
+                })
+
+    return approach_situations
+
+#Function is simulation the approach shots
+def simulate_approach(
+    landing_x,
+    landing_y,
+    approach_group,
+    approach_dispersion,
+    remaining_distance,
+    green_x,
+    green_y
+):
+    # Select historical approach shots from the correct distance group
+    lower, upper = approach_group
+
+    group_data = approach_dispersion[
+        (approach_dispersion["starting_distance"] >= lower) &
+        (approach_dispersion["starting_distance"] < upper) &
+        (~approach_dispersion["potential_recovery"])
+    ]
+
+    # Calculate direction from the ball to the green
+    dx = green_x - landing_x
+    dy = green_y - landing_y
+
+    # Convert direction into a unit vector
+    forward_x = dx / remaining_distance
+    forward_y = dy / remaining_distance
+
+    # Create a vector pointing right
+    right_x = forward_y
+    right_y = -forward_x
+
+    # Get historical approach errors for the selected group
+    # Negative sign converts left-positive errors to right-positive
+    lateral = -group_data["offline_yards"].to_numpy()
+    longitudinal = group_data["distance_error_yards"].to_numpy()
+
+    # Position historical dispersion around the green target
+    approach_x = green_x + lateral * right_x + longitudinal * forward_x
+    approach_y = green_y + lateral * right_y + longitudinal * forward_y
+
+    return approach_x, approach_y
+
 def main():
     zones = load_course_zones()
     zones_yards = convert_to_yards(zones)
@@ -86,7 +180,10 @@ def main():
     print(f"Rory's average distance: {average_distance:.2f} yards")
 
     # Test different horizontal offsets
-    offsets = [-30, -20, -10, 0, 10, 20, 30]
+    #THIS OFFSET IS USED FOR COMPLETE CALCULATION
+    #offsets = list(range(-40, 41)) 
+    #THIS OFFSET IS USED DURING DEVELOPMENT FOR FASTER RUN TIME
+    offsets = [-30, -20, -10, 10, 20, 30]
 
     #initialize most_fairwy_percentage to 0%
     most_fairway_percentage = -1
@@ -184,6 +281,28 @@ def main():
     print(f"Shortest Remaining distance: {np.min(remaining_distances)} yards")
     print(f"Longest Remaining distance: {np.max(remaining_distances)} yards")
 
+    # Classify each tee shot's landing zone
+    landing_zones = classify_landing_zones(
+        landing_x,
+        landing_y,
+        zones_yards
+    )
+
+    # Get all playable approach situations
+    approach_situations = get_approach_situations(
+        landing_x,
+        landing_y,
+        landing_zones,
+        remaining_distances
+    )
+
+    print(f"\nTotal simulated tee shots: {len(landing_x)}")
+    print(f"Playable approach situations: {len(approach_situations)}")
+
+    # Display the first 50 approach situations
+    for situation in approach_situations[:50]:
+        print(situation)
+
     #Plot Rory's dispersion on most fairway hits
     plot_course_map(
     zones_yards,
@@ -213,6 +332,123 @@ def main():
     best_aim_x,
     best_aim_y,
     "Rory McIlroy")
+
+    #Load Rory's historical approach dispersions
+    approach_shots = filter_approach_shots(shots)
+    targets = get_hole_target(shots)
+
+    approach_dispersion = calculate_approach_dispersion(approach_shots, targets)
+
+    #Identify potential recovery shots and exclude them from data
+    approach_dispersion = classify_shot_intent(approach_dispersion)
+
+    all_approach_x = []
+    all_approach_y = []
+
+    #simulate all approaches from every playable situation
+    for situation in approach_situations:
+
+        approach_x, approach_y = simulate_approach(
+            situation["landing_x"],
+            situation["landing_y"],
+            situation["approach_group"],
+            approach_dispersion,
+            situation["remaining_distance"],
+            green_x,
+            green_y
+        )
+
+        # Store all simulated approach landing positions
+        all_approach_x.extend(approach_x)
+        all_approach_y.extend(approach_y)
+
+    print("Total simulated approach outcomes:", len(all_approach_x))
+
+    #35,500 shots are simulated for approach
+    #Plotting all of these would be messy
+    #Therefore I am randomly picking 2,000 of these to plot
+
+   
+    # Randomly select 2000 approach outcomes for visualization
+    rng = np.random.default_rng(42)
+
+    sample_size = min(2000, len(all_approach_x))
+
+    indices = rng.choice(
+        len(all_approach_x),
+        size=sample_size,
+        replace=False
+    )
+
+    plot_x = np.asarray(all_approach_x)[indices]
+    plot_y = np.asarray(all_approach_y)[indices]
+
+    #Plot all approach shots
+    plot_course_map(
+        zones_yards,
+        (tee_x, tee_y),
+        (green_x, green_y),
+        plot_x,
+        plot_y,
+        green_x,
+        green_y,
+        "Rory McIlroy - Simulated Approach Shots",
+        zoom=100
+    )
+
+
+    """
+    #THIS IS AN EXPERIMENT TO TEST THE APPROACH
+    # Prepare Rory's existing approach dispersion
+    approach_shots = filter_approach_shots(shots)
+    targets = get_hole_target(shots)
+
+    approach_dispersion = calculate_approach_dispersion(
+        approach_shots,
+        targets
+    )
+
+    approach_dispersion = classify_shot_intent(
+        approach_dispersion
+    )
+
+    # Select all standard approaches from 175-200 yards
+    approach_175_200 = approach_dispersion[
+        (approach_dispersion["starting_distance"] >= 175) &
+        (approach_dispersion["starting_distance"] < 200) &
+        (~approach_dispersion["potential_recovery"])
+    ].copy()
+
+    print("Approach shots in 175-200 group:", len(approach_175_200))
+
+    # Temporary test position: 185 yards directly below green center
+    green_x, green_y = get_zone_center(zones_yards, "green")
+
+    test_distance = 185
+    test_x = green_x
+    test_y = green_y - test_distance
+
+    approach_x, approach_y = simulate_approach(
+    test_x,
+    test_y,
+    (175, 200),
+    approach_175_200,
+    test_distance,
+    green_x,
+    green_y
+    )
+
+    plot_course_map(
+    zones_yards,
+    (tee_x, tee_y),
+    (green_x, green_y),
+    approach_x,
+    approach_y,
+    green_x,
+    green_y,
+    "Rory McIlroy - 175-200 Yard Approach Dispersion"
+)
+"""
 
 
 

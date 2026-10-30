@@ -321,7 +321,8 @@ def plot_course_map(
     landing_y,
     aim_x,
     aim_y,
-    player_name
+    player_name,
+    zoom = None #Variable added so I can zoom in on approach
 ):
 
     # Define colors for each course zone
@@ -396,6 +397,13 @@ def plot_course_map(
     ax.set_ylabel("Northing (yards)")
 
     plt.tight_layout()
+    
+
+    #If it is displaying approach shots, Zoom in towards the green
+    if zoom is not None:
+        ax.set_xlim(green_center_coords[0] - zoom, green_center_coords[0] + zoom)
+        ax.set_ylim(green_center_coords[1] - zoom, green_center_coords[1] + zoom)
+
     plt.show()
 
 
