@@ -24,6 +24,11 @@ from analysis import(
     get_hole_target
 )
 
+from expected_shots import (
+    get_expected_strokes, 
+    get_expected_putts
+    )
+
 #Evaluate the landing zone for a given aimpoint
 def evaluate_aimpoint(dispersion, aim_x, aim_y, angle, zones_yards):
     #Position the players dispersion on the course
@@ -74,7 +79,7 @@ def calculate_remaining_distance(landing_x, landing_y, green_x, green_y):
 
 #Returns taht approach can be played only if ball is in rough ot fairway
 def can_play_approach(ladning_zone):
-    if ladning_zone in ["fairway", "rough"]:
+    if ladning_zone in ["fairway", "rough", "water"]:
         return True #Approach can be played
 
     return False #Approach can't be played
@@ -104,17 +109,30 @@ def get_approach_situations(landing_x, landing_y, landing_zones, remaining_dista
     for i in range(len(landing_x)):
         zone = landing_zones[i]
         distance = remaining_distances.iloc[i]
+        penalty = 0
+
+        x = landing_x.iloc[i]
+        y = landing_y.iloc[i]
 
         if can_play_approach(zone): #make sure the shot can be played towards the green
+
+            # If the tee shot lands in water, apply one penalty stroke
+            # and simulate a drop 6 yards to the right
+            if zone == "water":
+                penalty = 1
+                x = x + 6 #We drop the ball on the right since the water is always left of the fairway
+                zone = "fairway" #Assume that the ball has been dropped in the fairway
+                
             approach_group = select_approach_group(distance)
 
             if approach_group is not None: #make sure the zone exist
                 approach_situations.append({ #adds the sitation to the array
-                    "landing_x": landing_x.iloc[i],
-                    "landing_y": landing_y.iloc[i],
+                    "landing_x": x,
+                    "landing_y": y,
                     "remaining_distance": distance,
                     "landing_zone": zone,
-                    "approach_group": approach_group
+                    "approach_group": approach_group,  
+                    "penalty": penalty
                 })
 
     return approach_situations
@@ -161,7 +179,49 @@ def simulate_approach(
 
     return approach_x, approach_y
 
+#Calculate expected shots based on approach landing zone and remaining distance
+def calculate_expected(row):
+    zone = row["landing_zone"]
+    distance = row["remaining_distance"]
+
+    #If the ball is on the green, convert distance to feet
+    if zone == "green":
+        return get_expected_putts(distance * 3)
+
+    #the ball is in fairway, rough or bunker
+    elif zone in ["fairway", "rough", "bunker"]:
+        return get_expected_strokes(zone, distance)
+    
+    #When the ball ends up in water we take a drop (+1 strokes)
+    #The hazard at Augusta Hole 13 is yellow
+    #Therefore, we will always drop away from the green (in the fairway)
+    #Distance + 4 to make sure the player drops outside of the water hazard
+    elif zone == "water":
+        drop_distance = distance + 4
+        #the + 1 is the penalty
+        return 1 + get_expected_strokes("fairway", drop_distance)
+
+    #For other zone, return "Not a Number" (Different funtion needs to be implemented for water and OB)
+    else:
+        return np.nan
+    
+def calculate_total_score(row):
+    expected_strokes = row["expected_strokes"]
+    penalty = row["tee_penalty"]
+
+    #If expected_strokes is "Not a Number", return "Not a Number"
+    if pd.isna(expected_strokes):
+        return np.nan
+    #The score will be 2 + expected + potential tee penalty
+    return 2 + expected_strokes + penalty
+
+#calculate the average total_score
+def calculate_average_score(approach_results):
+    return approach_results["total_score"].mean()
+
+
 def main():
+    print("\n[1/8] Loading course data and Rory's shot data...", flush=True)
     zones = load_course_zones()
     zones_yards = convert_to_yards(zones)
 
@@ -204,7 +264,7 @@ def main():
     # Varible for the angle with the best aim (eval_score)
     best_aim_angle_eval = None
 
-
+    print("\n[2/8] Starting tee-shot aimpoint evaluation...", flush=True)
     for offset in offsets:
         current_aim_x = tee_x + offset
 
@@ -264,7 +324,7 @@ def main():
     print("Best Eval-Score:", best_eval_score)
     print("Best Offset (EVAL-SCORE):", best_evalscore_offset)
 
-    #Plot the highest fairway percentage map
+  #Plot the highest fairway percentage map
     best_aim_x = tee_x + best_offset_fairway_hit
     best_aim_y = tee_y + np.sqrt(average_distance**2 - best_offset_fairway_hit**2)
 
@@ -305,6 +365,7 @@ def main():
         print(situation)"""
 
     #Plot Rory's dispersion on most fairway hits
+    print("\n[3/8] Plotting best fairway aimpoint...", flush=True)
     plot_course_map(
     zones_yards,
     (tee_x, tee_y),
@@ -323,6 +384,7 @@ def main():
     #Position Rory's dispersion on most fairway aimpoint
     landing_x, landing_y = position_dispersion(dispersion, best_aim_x, best_aim_y, best_aim_angle_eval)
 
+    print("\n[4/8] Plotting best weighted-score aimpoint...", flush=True)
     #Plot Rory's dispersion on best Eval-Score
     plot_course_map(   
     zones_yards,
@@ -334,6 +396,7 @@ def main():
     best_aim_y,
     "Rory McIlroy")
 
+    print("\n[5/8] Preparing historical approach dispersion...", flush=True)
     #Load Rory's historical approach dispersions
     approach_shots = filter_approach_shots(shots)
     targets = get_hole_target(shots)
@@ -345,8 +408,10 @@ def main():
 
     all_approach_x = []
     all_approach_y = []
+    all_approach_penalties = []
 
     #simulate all approaches from every playable situation
+    print("\n[6/8] Started simulating apporoach outcomes...", flush=True)
     for situation in approach_situations:
 
         approach_x, approach_y = simulate_approach(
@@ -362,6 +427,11 @@ def main():
         # Store all simulated approach landing positions
         all_approach_x.extend(approach_x)
         all_approach_y.extend(approach_y)
+        # Apply the tee-shot penalty to every simulated approach outcome 
+        #However, it will not automatically add penalty
+        all_approach_penalties.extend(
+            [situation["penalty"]] * len(approach_x)
+        )
 
     print("Total simulated approach outcomes:", len(all_approach_x))
 
@@ -397,6 +467,7 @@ def main():
         zoom=100
     )
 
+    print("\n[7/8] Classifying simulated approach landing zones...", flush=True)
     #Classify in what zones the approach shots end up:
     approach_landing_zones = classify_landing_zones(all_approach_x, all_approach_y, zones_yards)
 
@@ -431,68 +502,37 @@ def main():
     #Store the simulated approach in a dataframe
     approach_results = pd.DataFrame({
         "landing_zone": approach_landing_zones,
-        "remaining_distance": approach_remaining_distances
+        "remaining_distance": approach_remaining_distances,
+        "tee_penalty": all_approach_penalties
 
     })
 
-    print(approach_results.head(20).to_string(index=False))
-
-
-
-    """
-    #THIS IS AN EXPERIMENT TO TEST THE APPROACH
-    # Prepare Rory's existing approach dispersion
-    approach_shots = filter_approach_shots(shots)
-    targets = get_hole_target(shots)
-
-    approach_dispersion = calculate_approach_dispersion(
-        approach_shots,
-        targets
+    print("\n[8/8] Calculating expected strokes for all approaches...", flush=True)
+    #Add a expected_strokes table to approach_result
+    #Axis = 1 means that it will execute calculate_expected once for each row
+    approach_results["expected_strokes"] = approach_results.apply(
+        calculate_expected, axis=1
     )
 
-    approach_dispersion = classify_shot_intent(
-        approach_dispersion
+    #Calculate the total expected score for the simulated approaches 
+    #Add the row to approach_results
+    approach_results["total_score"] = approach_results.apply(
+        calculate_total_score, axis=1
     )
 
-    # Select all standard approaches from 175-200 yards
-    approach_175_200 = approach_dispersion[
-        (approach_dispersion["starting_distance"] >= 175) &
-        (approach_dispersion["starting_distance"] < 200) &
-        (~approach_dispersion["potential_recovery"])
-    ].copy()
+    #Calculate the average total_score
+    average_score = calculate_average_score(approach_results)
 
-    print("Approach shots in 175-200 group:", len(approach_175_200))
+    print("Expected strokes calculation completed!", flush=True)
 
-    # Temporary test position: 185 yards directly below green center
-    green_x, green_y = get_zone_center(zones_yards, "green")
+    #print the first 100 approach results
+    print("EXPEXTED APPROACH RESULTS")
+    print(approach_results.head(1000).to_string(index=False))
+    print()
+    print(f"Average expected score: {average_score}")
 
-    test_distance = 185
-    test_x = green_x
-    test_y = green_y - test_distance
-
-    approach_x, approach_y = simulate_approach(
-    test_x,
-    test_y,
-    (175, 200),
-    approach_175_200,
-    test_distance,
-    green_x,
-    green_y
-    )
-
-    plot_course_map(
-    zones_yards,
-    (tee_x, tee_y),
-    (green_x, green_y),
-    approach_x,
-    approach_y,
-    green_x,
-    green_y,
-    "Rory McIlroy - 175-200 Yard Approach Dispersion"
-)
-"""
-
-
+    print("Average expected score calculated successfully!", flush=True)
+    
 
 if __name__ == "__main__":
     main()

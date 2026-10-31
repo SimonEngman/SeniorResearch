@@ -4,7 +4,7 @@ import math
 #Mathematical equations from Mark Broadie's research to calculate expected putts
 #The input needs to be in feet, not yards
 #The output will be expected remaining putts to hole out
-def expected_putts(d_feet):
+def get_expected_putts(d_feet):
     if d_feet < 0:
         raise ValueError("The distance can't be negative") #We can't have a negative distance
     if d_feet == 0:
@@ -111,7 +111,7 @@ EXPECTED_SHOTS = {
 #Calculate the expected putts from 1 - 91 feet
 PUTTING_DISTANCES = np.arange(1, 91)
 EXPECTED_PUTTS = np.array([
-    expected_putts(distance) for distance in PUTTING_DISTANCES
+    get_expected_putts(distance) for distance in PUTTING_DISTANCES
 ])
 
 
