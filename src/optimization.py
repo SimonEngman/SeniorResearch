@@ -69,6 +69,7 @@ def evaluate_score(zones_percentages):
 
     return score
 
+
 #Calculate the remaining distance to the hole afte tee shot
 def calculate_remaining_distance(landing_x, landing_y, green_x, green_y):
     remaining_distances = np.sqrt(
@@ -77,12 +78,31 @@ def calculate_remaining_distance(landing_x, landing_y, green_x, green_y):
     )
     return remaining_distances
 
+
+#Function handles approach shots that end up in the trees
+def handle_trees(remaining_distance):
+    #If distance < 220 yards, go fo green 50% of the time
+    if remaining_distance <= 220:
+        if np.random.random() < 0.5:
+            return "go_for_green"
+    #Otherwise lay up to one of two distance group (50/50)
+    if np.random.random() < 0.5:
+        return "layup_50_75"
+    else:
+        return "layup_100_125"
+
+
 #Returns taht approach can be played only if ball is in rough ot fairway
-def can_play_approach(ladning_zone):
-    if ladning_zone in ["fairway", "rough", "water"]:
+def can_play_approach(landing_zone, remaining_distance):
+    if landing_zone == "trees":
+        return handle_trees(remaining_distance)
+    
+
+    if landing_zone in ["fairway", "rough", "water"]:
         return True #Approach can be played
 
-    return False #Approach can't be played
+    return None #Approach can't be played
+
 
 def select_approach_group(remaining_distance):
     #We are using these groupings in analysis.py
@@ -102,8 +122,9 @@ def select_approach_group(remaining_distance):
             return(lower, upper) #returns the lower and upper limit of the group
     return None #shot could not be classified to a group
 
+
 #Returns the approach situation
-def get_approach_situations(landing_x, landing_y, landing_zones, remaining_distances):
+def get_approach_situations(landing_x, landing_y, landing_zones, remaining_distances, green_x, green_y):
     approach_situations = []
 
     for i in range(len(landing_x)):
@@ -114,7 +135,34 @@ def get_approach_situations(landing_x, landing_y, landing_zones, remaining_dista
         x = landing_x.iloc[i]
         y = landing_y.iloc[i]
 
-        if can_play_approach(zone): #make sure the shot can be played towards the green
+        shot_decision = can_play_approach(zone, distance)
+
+        if shot_decision is not None:
+            extra_shot = 0 #will be one if player has layed up
+
+            #The player will lay up
+            if shot_decision in ["layup_50_75", "layup_100_125"]:
+                extra_shot = 1 #the layup shot
+
+                #choose the remaining distance
+                if shot_decision == "layup_50_75":
+                    new_distance = 62.5
+                    zone = "fairway"
+                else:
+                    new_distance = 112.5
+                    zone = "fairway"
+
+                #Direction from ball to green
+                dx = green_x - x
+                dy = green_y - y
+
+                #Move the ball straight towards the green center
+                if distance > 0:
+                    x = green_x - (dx / distance) * new_distance
+                    y = green_y - (dy / distance) * new_distance
+
+                distance = new_distance
+                zone = "fairway"
 
             # If the tee shot lands in water, apply one penalty stroke
             # and simulate a drop 6 yards to the right
@@ -132,10 +180,12 @@ def get_approach_situations(landing_x, landing_y, landing_zones, remaining_dista
                     "remaining_distance": distance,
                     "landing_zone": zone,
                     "approach_group": approach_group,  
-                    "penalty": penalty
+                    "penalty": penalty,
+                    "extra_shot": extra_shot
                 })
 
     return approach_situations
+
 
 #Function is simulation the approach shots
 def simulate_approach(
@@ -160,9 +210,12 @@ def simulate_approach(
     dx = green_x - landing_x
     dy = green_y - landing_y
 
-    # Convert direction into a unit vector
-    forward_x = dx / remaining_distance
-    forward_y = dy / remaining_distance
+    # Calculate the actual distance to the green to ensure a correct direction vector
+    actual_distance = np.hypot(dx, dy)
+
+    # Normalize the direction vector
+    forward_x = dx / actual_distance
+    forward_y = dy / actual_distance
 
     # Create a vector pointing right
     right_x = forward_y
@@ -208,12 +261,13 @@ def calculate_expected(row):
 def calculate_total_score(row):
     expected_strokes = row["expected_strokes"]
     penalty = row["tee_penalty"]
+    extra_shot = row["extra_shot"]
 
     #If expected_strokes is "Not a Number", return "Not a Number"
     if pd.isna(expected_strokes):
         return np.nan
-    #The score will be 2 + expected + potential tee penalty
-    return 2 + expected_strokes + penalty
+    #The score will be 2 + expected + potential tee penalty + potential lay up shot
+    return 2 + expected_strokes + penalty + extra_shot
 
 #calculate the average total_score
 def calculate_average_score(approach_results):
@@ -354,7 +408,9 @@ def main():
         landing_x,
         landing_y,
         landing_zones,
-        remaining_distances
+        remaining_distances,
+        green_x,
+        green_y
     )
 
     print(f"\nTotal simulated tee shots: {len(landing_x)}")
@@ -409,6 +465,7 @@ def main():
     all_approach_x = []
     all_approach_y = []
     all_approach_penalties = []
+    all_approach_extra_shot = []
 
     #simulate all approaches from every playable situation
     print("\n[6/8] Started simulating apporoach outcomes...", flush=True)
@@ -427,10 +484,15 @@ def main():
         # Store all simulated approach landing positions
         all_approach_x.extend(approach_x)
         all_approach_y.extend(approach_y)
-        # Apply the tee-shot penalty to every simulated approach outcome 
+        #Apply the tee-shot penalty to every simulated approach outcome 
         #However, it will not automatically add penalty
         all_approach_penalties.extend(
             [situation["penalty"]] * len(approach_x)
+        )
+
+        #Add extra_shot so that it can be added for all layups
+        all_approach_extra_shot.extend(
+            [situation["extra_shot"]] * len(approach_x)
         )
 
     print("Total simulated approach outcomes:", len(all_approach_x))
@@ -503,7 +565,8 @@ def main():
     approach_results = pd.DataFrame({
         "landing_zone": approach_landing_zones,
         "remaining_distance": approach_remaining_distances,
-        "tee_penalty": all_approach_penalties
+        "tee_penalty": all_approach_penalties,
+        "extra_shot": all_approach_extra_shot
 
     })
 
@@ -527,7 +590,7 @@ def main():
 
     #print the first 100 approach results
     print("EXPEXTED APPROACH RESULTS")
-    print(approach_results.head(1000).to_string(index=False))
+    print(approach_results.head(10000).to_string(index=False))
     print()
     print(f"Average expected score: {average_score}")
 
