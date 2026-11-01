@@ -972,7 +972,7 @@ def main():
     for player_name, file_name in players.items():
 
         shots = load_player_data(file_name)
-        """
+     
         # Calculate dispersion using typical direction
         tee_shots = calculate_dispersion_typdir(shots)
 
@@ -994,7 +994,7 @@ def main():
 
         # Plot central 90% dispersion on the filtered data
         plot_central_dispersion(tee_shots_filtered, player_name)
-        """
+      
         # Approach shot analysis
         approach_shots = filter_approach_shots(shots)
 

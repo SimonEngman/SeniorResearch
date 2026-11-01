@@ -90,18 +90,86 @@ def handle_trees(remaining_distance):
         return "layup_50_75"
     else:
         return "layup_100_125"
+    
+
+#Function handles tee shots that are Out of Bounds (OB)
+def handle_ob(dispersion, aim_x, aim_y, angle, zones_yards):
+    landing_zone = "ob" #The ball is currently out of bounds
+    penalty = 0 #Initialize penalty to 0
+
+    while landing_zone == "ob":
+        #Add 2 penalty strokes for the OB shot
+        penalty += 2
+
+        #Randomly select a tee-shot fom the historical dispersion
+        random_index = np.random.randint(len(dispersion))
+        random_shots = dispersion.iloc[[random_index]]
+
+        #Position the replacing tee shot using the original aimpoint
+        landing_x, landing_y = position_dispersion(random_shots, aim_x, aim_y, angle)
+
+        #Classify the landing zone of the new shot
+        landing_zone = classify_landing_zones(landing_x, landing_y, zones_yards) [0]
+
+        #Print where the new shot landed
+        print(f"The OB replacement tee shot landed in: {landing_zone}")
+
+    return np.asarray(landing_x)[0], np.asarray(landing_y)[0], landing_zone, penalty
+
+#Function handles approach shots that goes Out of Bounds (OB)
+def handle_approach_ob(landing_x, landing_y, approach_group, approach_dispersion, remaining_distance, green_x, green_y, zones_yards):
+
+    landing_zone = "ob" #The ball is currently out of bounds
+    penalty = 0 #Initialize penalty to 0
+
+    while landing_zone == "ob":
+        #Add 2 penalty strokes for the OB shot
+        penalty += 2
+
+        # Simulate replacement approaches from the original position
+        approach_x, approach_y = simulate_approach(
+            landing_x,
+            landing_y,
+            approach_group,
+            approach_dispersion,
+            remaining_distance,
+            green_x,
+            green_y
+        )
+
+        # Randomly select one approach from historical dispersion
+        random_index = np.random.randint(len(approach_x))
+        replacement_x = approach_x[random_index]
+        replacement_y = approach_y[random_index]
+
+        # Classify the landing zone of the replacement approach
+        landing_zone = classify_landing_zones(
+            [replacement_x],
+            [replacement_y],
+            zones_yards
+        )[0]
+
+        #print where the new approach landed
+        print(f"The OB approach replacement landed in: {landing_zone}")
+
+    return replacement_x, replacement_y, landing_zone, penalty
+
+
 
 
 #Returns taht approach can be played only if ball is in rough ot fairway
-def can_play_approach(landing_zone, remaining_distance):
+def can_play_approach(landing_zone, remaining_distance, dispersion, aim_x, aim_y, angle, zones_yards):
+
     if landing_zone == "trees":
         return handle_trees(remaining_distance)
     
+    elif landing_zone == "ob":
+        return handle_ob(dispersion, aim_x, aim_y, angle, zones_yards)
 
-    if landing_zone in ["fairway", "rough", "water"]:
+    elif landing_zone in ["fairway", "rough", "water"]:
         return True #Approach can be played
 
-    return None #Approach can't be played
+    return None #Approach can't be played / Faulty zone
 
 
 def select_approach_group(remaining_distance):
@@ -124,7 +192,8 @@ def select_approach_group(remaining_distance):
 
 
 #Returns the approach situation
-def get_approach_situations(landing_x, landing_y, landing_zones, remaining_distances, green_x, green_y):
+def get_approach_situations(landing_x, landing_y, landing_zones, remaining_distances, green_x, green_y, dispersion, aim_x, aim_y, angle, zones_yards):
+
     approach_situations = []
 
     for i in range(len(landing_x)):
@@ -135,7 +204,22 @@ def get_approach_situations(landing_x, landing_y, landing_zones, remaining_dista
         x = landing_x.iloc[i]
         y = landing_y.iloc[i]
 
-        shot_decision = can_play_approach(zone, distance)
+        shot_decision = can_play_approach(zone, distance, dispersion, aim_x, aim_y, angle, zones_yards)
+
+        #Tee shot has landed out of bounds
+        if zone == "ob":
+            x, y, zone, ob_penalty = shot_decision
+
+            #Add the OB penalty
+            penalty += ob_penalty
+
+            # Recalculate remaining distance from the replacement shot
+            distance = calculate_remaining_distance(x, y, green_x, green_y)
+
+            # Determine the approach decision from the new landing zone
+            shot_decision = can_play_approach(
+                zone, distance, dispersion, aim_x, aim_y, angle, zones_yards
+            )
 
         if shot_decision is not None:
             extra_shot = 0 #will be one if player has layed up
@@ -167,10 +251,15 @@ def get_approach_situations(landing_x, landing_y, landing_zones, remaining_dista
             # If the tee shot lands in water, apply one penalty stroke
             # and simulate a drop 6 yards to the right
             if zone == "water":
-                penalty = 1
+                penalty += 1
                 x = x + 6 #We drop the ball on the right since the water is always left of the fairway
                 zone = "fairway" #Assume that the ball has been dropped in the fairway
-                
+
+                # Recalculate distance after the drop
+                distance = calculate_remaining_distance(x, y, green_x, green_y)
+
+
+        
             approach_group = select_approach_group(distance)
 
             if approach_group is not None: #make sure the zone exist
@@ -274,31 +363,32 @@ def calculate_average_score(approach_results):
     return approach_results["total_score"].mean()
 
 
-def main():
-    print("\n[1/8] Loading course data and Rory's shot data...", flush=True)
+def main(player_name, csv_file):
+    print(f"SIMULATION STARTED FOR {player_name}")
+    print("=" * 40) 
+    print(f"\n[1/8] Loading course data and {player_name}'s shot data...", flush=True)
     zones = load_course_zones()
     zones_yards = convert_to_yards(zones)
 
     tee_x, tee_y = get_zone_center(zones_yards, "tee")
 
-    dispersion = load_player_dispersion("rory_2025_shots.csv")
+    dispersion = load_player_dispersion(csv_file)
 
     # Original experimental landing center
-    # Use Rory's tee-shot data
-    shots = load_player_data("rory_2025_shots.csv")
+    shots = load_player_data(csv_file)
 
     tee_shots = calculate_dispersion_typdir(shots)
     tee_shots = filter_tee_dispersion_by_distance(tee_shots)
 
     average_distance = calculate_average_distance(tee_shots)
 
-    print(f"Rory's average distance: {average_distance:.2f} yards")
+    print(f"{player_name}'s average distance: {average_distance:.2f} yards")
 
     # Test different horizontal offsets
     #THIS OFFSET IS USED FOR COMPLETE CALCULATION
-    #offsets = list(range(-40, 41)) 
+    offsets = list(range(-30, 31)) 
     #THIS OFFSET IS USED DURING DEVELOPMENT FOR FASTER RUN TIME
-    offsets = [-30, -20, -10, 10, 20, 30]
+    #offsets = [-30, -20, -10, 10, 20, 30]
 
     #initialize most_fairwy_percentage to 0%
     most_fairway_percentage = -1
@@ -373,7 +463,7 @@ def main():
         print(results)
     
     print("Best offset:", best_offset_fairway_hit)
-    print("Highest fairway percentage:", most_fairway_percentage)
+    print("Highest fairway percentage:", most_fairway_percentage) 
     print()
     print("Best Eval-Score:", best_eval_score)
     print("Best Offset (EVAL-SCORE):", best_evalscore_offset)
@@ -382,13 +472,49 @@ def main():
     best_aim_x = tee_x + best_offset_fairway_hit
     best_aim_y = tee_y + np.sqrt(average_distance**2 - best_offset_fairway_hit**2)
 
-    #Position Rory's dispersion on most fairway aimpoint
+    #Position player's dispersion on most fairway aimpoint
     landing_x, landing_y = position_dispersion(dispersion, best_aim_x, best_aim_y, best_aim_angle_fairway)
 
     # Find the green center
     green_center_coords = get_zone_center(zones_yards, "green")
     #Identify the x and y coordinates of the green center
     green_x, green_y = green_center_coords
+
+    # Display the first 50 approach situations
+    """for situation in approach_situations[:50]:
+        print(situation)"""
+
+    #Plot player's dispersion on most fairway hits
+    print("\n[3/8] Plotting best fairway aimpoint...", flush=True)
+    plot_course_map(
+    zones_yards,
+    (tee_x, tee_y),
+    green_center_coords,
+    landing_x,
+    landing_y,
+    best_aim_x,
+    best_aim_y,
+    player_name
+    )
+
+    #Plot the highest eval-score map
+    best_aim_x = tee_x + best_evalscore_offset
+    best_aim_y = tee_y + np.sqrt(average_distance**2 - best_evalscore_offset**2)
+
+    #Position player's dispersion on most fairway aimpoint
+    landing_x, landing_y = position_dispersion(dispersion, best_aim_x, best_aim_y, best_aim_angle_eval)
+
+    print("\n[4/8] Plotting best weighted-score aimpoint...", flush=True)
+    #Plot player's dispersion on best Eval-Score
+    plot_course_map(   
+    zones_yards,
+    (tee_x, tee_y),
+    green_center_coords,
+    landing_x,
+    landing_y,
+    best_aim_x,
+    best_aim_y,
+    player_name)
 
     #Calculate the remaining distance
     remaining_distances = calculate_remaining_distance(landing_x, landing_y, green_x, green_y)
@@ -403,6 +529,10 @@ def main():
         zones_yards
     )
 
+    ob_tee_shots = landing_zones.count("ob")
+    print(f"Out of Bounds tee shots: {ob_tee_shots}")
+    print(f"Percentage of OB tee shots: {ob_tee_shots / len(landing_zones) * 100:.2f}%")
+
     # Get all playable approach situations
     approach_situations = get_approach_situations(
         landing_x,
@@ -410,50 +540,19 @@ def main():
         landing_zones,
         remaining_distances,
         green_x,
-        green_y
+        green_y,
+        dispersion,
+        best_aim_x,
+        best_aim_y,
+        best_aim_angle_eval,
+        zones_yards
     )
 
     print(f"\nTotal simulated tee shots: {len(landing_x)}")
     print(f"Playable approach situations: {len(approach_situations)}")
 
-    # Display the first 50 approach situations
-    """for situation in approach_situations[:50]:
-        print(situation)"""
-
-    #Plot Rory's dispersion on most fairway hits
-    print("\n[3/8] Plotting best fairway aimpoint...", flush=True)
-    plot_course_map(
-    zones_yards,
-    (tee_x, tee_y),
-    green_center_coords,
-    landing_x,
-    landing_y,
-    best_aim_x,
-    best_aim_y,
-    "Rory McIlroy"
-    )
-
-    #Plot the highest eval-score map
-    best_aim_x = tee_x + best_evalscore_offset
-    best_aim_y = tee_y + np.sqrt(average_distance**2 - best_evalscore_offset**2)
-
-    #Position Rory's dispersion on most fairway aimpoint
-    landing_x, landing_y = position_dispersion(dispersion, best_aim_x, best_aim_y, best_aim_angle_eval)
-
-    print("\n[4/8] Plotting best weighted-score aimpoint...", flush=True)
-    #Plot Rory's dispersion on best Eval-Score
-    plot_course_map(   
-    zones_yards,
-    (tee_x, tee_y),
-    green_center_coords,
-    landing_x,
-    landing_y,
-    best_aim_x,
-    best_aim_y,
-    "Rory McIlroy")
-
     print("\n[5/8] Preparing historical approach dispersion...", flush=True)
-    #Load Rory's historical approach dispersions
+    #Load the player's historical approach dispersions
     approach_shots = filter_approach_shots(shots)
     targets = get_hole_target(shots)
 
@@ -466,6 +565,9 @@ def main():
     all_approach_y = []
     all_approach_penalties = []
     all_approach_extra_shot = []
+
+    #EXPERIMENT VARIABLE
+    approach_ob_count = 0
 
     #simulate all approaches from every playable situation
     print("\n[6/8] Started simulating apporoach outcomes...", flush=True)
@@ -481,20 +583,46 @@ def main():
             green_y
         )
 
-        # Store all simulated approach landing positions
-        all_approach_x.extend(approach_x)
-        all_approach_y.extend(approach_y)
-        #Apply the tee-shot penalty to every simulated approach outcome 
-        #However, it will not automatically add penalty
-        all_approach_penalties.extend(
-            [situation["penalty"]] * len(approach_x)
-        )
+        
+        #Classify the landing_zones of the simulated approaches
+        approach_zones = classify_landing_zones(approach_x, approach_y, zones_yards)
 
-        #Add extra_shot so that it can be added for all layups
-        all_approach_extra_shot.extend(
-            [situation["extra_shot"]] * len(approach_x)
-        )
+        # Count original approach shots that went OB
+        approach_ob_count += np.sum(np.asarray(approach_zones) == "ob")
 
+        #Check each simulated approach individually
+        for x, y, zone in zip(approach_x, approach_y, approach_zones):
+            ob_penalty = 0 #no penalty, unless the shot is ob
+
+            #calls handle_ob_approach if the shot is of
+            if zone == "ob":
+                x, y, zone, ob_penalty = handle_approach_ob(
+                    situation["landing_x"],
+                    situation["landing_y"],
+                    situation["approach_group"],
+                    approach_dispersion,
+                    situation["remaining_distance"],
+                    green_x,
+                    green_y,
+                    zones_yards
+                )
+
+            # Store the final approach landing position
+            all_approach_x.append(x)
+            all_approach_y.append(y)
+
+            # Add tee penalties and additional approach OB strokes
+            all_approach_penalties.append(
+                situation["penalty"] + ob_penalty
+            )
+
+            # Add the extra shot if there has been a layup
+            all_approach_extra_shot.append(
+                situation["extra_shot"]
+            )
+        
+    print(f"Number of approach shots that went OB: {approach_ob_count}")
+    print(f"Percentage of approaches that went OB: {approach_ob_count / len(all_approach_x) * 100:.2f}%")
     print("Total simulated approach outcomes:", len(all_approach_x))
 
     #35,500 shots are simulated for approach
@@ -525,7 +653,7 @@ def main():
         plot_y,
         green_x,
         green_y,
-        "Rory McIlroy - Simulated Approach Shots",
+        f"{player_name} - Simulated Approach Shots",
         zoom=100
     )
 
@@ -541,7 +669,7 @@ def main():
     print(f"Total shots Again: {total_approaches}")
 
     #Print the result
-    print("Rory Mcilroy - Approach shot statistics")
+    print(f"{player_name} - Approach shot statistics")
     
     for zone, count in approach_zone_counts.items():
         percentage = (count / total_approaches) * 100
@@ -598,4 +726,5 @@ def main():
     
 
 if __name__ == "__main__":
-    main()
+    main("Rory McIlroy", "rory_2025_shots.csv")
+    main("Collin Morikawa", "collin_2025_shots.csv")
