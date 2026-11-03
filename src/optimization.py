@@ -110,14 +110,14 @@ def handle_ob(dispersion, aim_x, aim_y, angle, zones_yards):
 
         #Classify the landing zone of the new shot
         landing_zone = classify_landing_zones(landing_x, landing_y, zones_yards) [0]
-
-        #Print where the new shot landed
-        print(f"The OB replacement tee shot landed in: {landing_zone}")
+        
+        #Print where the replacin tee-shot landed
+        #print(f"The OB replacement landed in: {landing_zone}")
 
     return np.asarray(landing_x)[0], np.asarray(landing_y)[0], landing_zone, penalty
 
 #Function handles approach shots that goes Out of Bounds (OB)
-def handle_approach_ob(landing_x, landing_y, approach_group, approach_dispersion, remaining_distance, green_x, green_y, zones_yards):
+def handle_approach_ob(landing_x, landing_y, approach_group, approach_dispersion, remaining_distance, green_x, green_y, zones_yards, lateral_offset=0, longitudinal_offset=0):
 
     landing_zone = "ob" #The ball is currently out of bounds
     penalty = 0 #Initialize penalty to 0
@@ -134,7 +134,9 @@ def handle_approach_ob(landing_x, landing_y, approach_group, approach_dispersion
             approach_dispersion,
             remaining_distance,
             green_x,
-            green_y
+            green_y,
+            lateral_offset,
+            longitudinal_offset
         )
 
         # Randomly select one approach from historical dispersion
@@ -150,7 +152,7 @@ def handle_approach_ob(landing_x, landing_y, approach_group, approach_dispersion
         )[0]
 
         #print where the new approach landed
-        print(f"The OB approach replacement landed in: {landing_zone}")
+        #print(f"The OB approach replacement landed in: {landing_zone}")
 
     return replacement_x, replacement_y, landing_zone, penalty
 
@@ -284,7 +286,9 @@ def simulate_approach(
     approach_dispersion,
     remaining_distance,
     green_x,
-    green_y
+    green_y,
+    lateral_offset = 0,
+    longitudinal_offset = 0
 ):
     # Select historical approach shots from the correct distance group
     lower, upper = approach_group
@@ -315,11 +319,131 @@ def simulate_approach(
     lateral = -group_data["offline_yards"].to_numpy()
     longitudinal = group_data["distance_error_yards"].to_numpy()
 
-    # Position historical dispersion around the green target
-    approach_x = green_x + lateral * right_x + longitudinal * forward_x
-    approach_y = green_y + lateral * right_y + longitudinal * forward_y
+    # Calculate the new aimpoint relative to the pin
+    aim_x = (
+        green_x
+        + lateral_offset * right_x
+        + longitudinal_offset * forward_x
+    )
+
+    aim_y = (
+        green_y
+        + lateral_offset * right_y
+        + longitudinal_offset * forward_y
+    )
+
+    # Position historical dispersion around the new aimpoint
+    approach_x = aim_x + lateral * right_x + longitudinal * forward_x
+    approach_y = aim_y + lateral * right_y + longitudinal * forward_y
 
     return approach_x, approach_y
+
+def optimize_approach_aimpoint(approach_situations, approach_dispersion, green_x, green_y, zones_yards):
+
+    results = []
+
+    for lateral_offset in range(-10, 11, 5):
+        for longitudinal_offset in range(-10, 11, 5):
+
+            total_scores = []
+
+            for situation in approach_situations:
+
+                #simulate the approaches with the offset
+                approach_x, approach_y = simulate_approach(
+                    situation["landing_x"],
+                    situation["landing_y"],
+                    situation["approach_group"],
+                    approach_dispersion,
+                    situation["remaining_distance"],
+                    green_x,
+                    green_y,
+                    lateral_offset,
+                    longitudinal_offset
+                )
+                #classify in what zone the apporach landed
+                approach_zones = classify_landing_zones(
+                    approach_x,
+                    approach_y,
+                    zones_yards
+                )
+
+                for x, y, zone in zip(approach_x, approach_y, approach_zones):
+                    ob_penalty = 0
+
+                    # Handle out-of-bounds approaches
+                    if zone == "ob":
+                        x, y, zone, ob_penalty = handle_approach_ob(
+                            situation["landing_x"],
+                            situation["landing_y"],
+                            situation["approach_group"],
+                            approach_dispersion,
+                            situation["remaining_distance"],
+                            green_x,
+                            green_y,
+                            zones_yards,
+                            lateral_offset,
+                            longitudinal_offset
+                        )
+                    #Exlude zone if it is classified as "other"
+                    if zone == "other":
+                        continue
+
+                    distance = calculate_remaining_distance(
+                        x, y, green_x, green_y
+                    )
+
+                    row = {
+                        "landing_zone": zone,
+                        "remaining_distance": distance
+                    }
+
+                    expected = calculate_expected(row)
+
+                    if pd.isna(expected):
+                        continue
+
+                    total_score = (
+                        2
+                        + expected
+                        + situation["penalty"]
+                        + situation["extra_shot"]
+                        + ob_penalty
+                    )
+
+                    total_scores.append(total_score)
+
+            average_score = (
+                np.mean(total_scores)
+                if total_scores else np.nan
+            )
+
+            results.append({
+                "lateral_offset": lateral_offset,
+                "longitudinal_offset": longitudinal_offset,
+                "expected_score": average_score,
+                "scored_outcomes": len(total_scores)
+            })
+            
+            print(
+                f"Aimpoint ({lateral_offset}, {longitudinal_offset}): "
+                f"Expected Score = {average_score:.3f}"
+            )
+
+    #Store the results in a dataframe
+    results_df = pd.DataFrame(results)
+
+    valid_results = results_df.dropna(subset=["expected_score"])
+
+    if valid_results.empty:
+        raise ValueError("No valid approach aimpoints could be evaluated.")
+
+    best_aimpoint = valid_results.loc[
+        valid_results["expected_score"].idxmin()
+    ]
+
+    return results_df, best_aimpoint
+
 
 #Calculate expected shots based on approach landing zone and remaining distance
 def calculate_expected(row):
@@ -485,7 +609,7 @@ def main(player_name, csv_file):
         print(situation)"""
 
     #Plot player's dispersion on most fairway hits
-    print("\n[3/8] Plotting best fairway aimpoint...", flush=True)
+    """print("\n[3/8] Plotting best fairway aimpoint...", flush=True)
     plot_course_map(
     zones_yards,
     (tee_x, tee_y),
@@ -496,6 +620,7 @@ def main(player_name, csv_file):
     best_aim_y,
     player_name
     )
+    """
 
     #Plot the highest eval-score map
     best_aim_x = tee_x + best_evalscore_offset
@@ -561,6 +686,31 @@ def main(player_name, csv_file):
     #Identify potential recovery shots and exclude them from data
     approach_dispersion = classify_shot_intent(approach_dispersion)
 
+    # Optimize approach aimpoint
+    print("\nStarting approach aimpoint optimization...")
+
+    aimpoint_results, best_approach = optimize_approach_aimpoint(
+        approach_situations,
+        approach_dispersion,
+        green_x,
+        green_y,
+        zones_yards
+    )
+
+    # Save optimization results to CSV
+    player_file = player_name.lower().replace(" ", "_")
+
+    aimpoint_results.to_csv(
+        f"{player_file}_approach_optimization.csv",
+        index=False
+    )
+
+    # Print the optimal aimpoint
+    print("\nBEST APPROACH AIMPOINT")
+    print(f"Lateral offset: {best_approach['lateral_offset']:.0f} yards")
+    print(f"Longitudinal offset: {best_approach['longitudinal_offset']:.0f} yards")
+    print(f"Expected score: {best_approach['expected_score']:.3f}")
+
     all_approach_x = []
     all_approach_y = []
     all_approach_penalties = []
@@ -580,7 +730,9 @@ def main(player_name, csv_file):
             approach_dispersion,
             situation["remaining_distance"],
             green_x,
-            green_y
+            green_y,
+            int(best_approach["lateral_offset"]),
+            int(best_approach["longitudinal_offset"])
         )
 
         
@@ -604,7 +756,9 @@ def main(player_name, csv_file):
                     situation["remaining_distance"],
                     green_x,
                     green_y,
-                    zones_yards
+                    zones_yards,
+                    int(best_approach["lateral_offset"]),
+                    int(best_approach["longitudinal_offset"])
                 )
 
             # Store the final approach landing position
