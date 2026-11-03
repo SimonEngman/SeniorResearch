@@ -300,7 +300,7 @@ def plot_dispersion_elipse(ax, landing_x, landing_y):
         width=width,
         height=height,
         angle=angle,
-        edgecolor="red",
+        edgecolor="#E613BF",
         facecolor="none",
         linewidth=1,
         linestyle="--",
@@ -328,12 +328,13 @@ def plot_course_map(
     # Define colors for each course zone
     zone_colors = {
         "fairway": "#50A83B",
-        "green": "#176B35",
-        "bunker": "#E6D2A0",
+        "green": "#0D5627",
+        "bunker": "#E3D9C0",
         "water": "#2878B5",
         "trees": "#E6C229",
-        "ob": "#D62828",
+        "ob": "#460101",
         "tee": "#7ED957",
+        "rough": "#0C7025"
     }
 
     # Create the plot
@@ -353,7 +354,7 @@ def plot_course_map(
     ax.scatter(
         tee_center_coords[0],
         tee_center_coords[1],
-        color="red",
+        color="#A713E6",
         marker="o",
         label="Tee Center"
     )
@@ -362,8 +363,9 @@ def plot_course_map(
     ax.scatter(
         green_center_coords[0],
         green_center_coords[1],
-        color="blue",
-        marker="o",
+        color="#D20E0E",
+        marker="*",
+        s=10,
         label="Green Center"
     )
 
@@ -371,7 +373,7 @@ def plot_course_map(
     ax.scatter(
         landing_x,
         landing_y,
-        color="red",
+        color="#E613BF",
         s=10,
         alpha=0.35,
         label=f"{player_name} Dispersion"
@@ -386,7 +388,7 @@ def plot_course_map(
         aim_y,
         color="black",
         marker="x",
-        s=100,
+        s=40,
         label="Aim Point"
     )
 
@@ -473,6 +475,18 @@ def main():
         (tee_center_coords[0] - green_center_coords[0])**2 +
         (tee_center_coords[1] - green_center_coords[1])**2
     )
+
+    #calculate the total distance following the fairway to the green
+    tee_to_fairway_distance = np.sqrt(
+        (tee_center_coords[0] - aim_x)**2 +
+        (tee_center_coords[1] - aim_y)**2
+    )
+    fairway_to_green_distance = np.sqrt(
+        (aim_x - green_center_coords[0])**2 +
+        (aim_y - green_center_coords[1])**2
+    )
+    total_fairway_distance = tee_to_fairway_distance + fairway_to_green_distance
+    print(f"\nTotal Distance Following Fairway to Green: {round(total_fairway_distance, 2)} yards")
 
     print(
         "\nStraight-line Tee to Green Distance:",
