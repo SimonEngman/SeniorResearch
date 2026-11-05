@@ -62,9 +62,9 @@ def evaluate_score(zones_percentages):
     score = (
         fairway
         -0.2 * rough
-        -0.4 * trees #Trees on augusta hole 13 is not overly bad
-        -2 * water # water is a huge disadvantage
-        -3.5 * ob #Ob should almost never occur
+        -0.5 * trees #Trees on augusta hole 13 is not overly bad
+        -1 * water # water is a huge disadvantage
+        -2 * ob #Ob should almost never occur
     )
 
     return score
@@ -225,8 +225,8 @@ def get_approach_situations(landing_x, landing_y, landing_zones, remaining_dista
 
         if shot_decision is not None:
             extra_shot = 0 #will be one if player has layed up
-
-            #The player will lay up
+            
+            #The player will lay up from trees
             if shot_decision in ["layup_50_75", "layup_100_125"]:
                 extra_shot = 1 #the layup shot
 
@@ -260,8 +260,30 @@ def get_approach_situations(landing_x, landing_y, landing_zones, remaining_dista
                 # Recalculate distance after the drop
                 distance = calculate_remaining_distance(x, y, green_x, green_y)
 
+            #Force layup if the remaining distance is greater than 250 yards
+            if  zone in ["fairway", "rough"] and distance >= 250:
 
-        
+                #randomized layup distance, 50 yds - 75 yds
+                new_distance = np.random.uniform(50, 75)
+
+                #Move the ball on a straight line towards the green center
+                dx = green_x - x
+                dy = green_y - y
+                actual_distance = np.hypot(dx, dy)
+
+                if actual_distance > 0:
+                    x = green_x - (dx / actual_distance) * new_distance
+                    y = green_y - (dy / actual_distance) * new_distance
+
+                #New situation after layup
+                #Assume tha the player lays up in the fairway
+                extra_shot += 1 #add the layup shot
+                distance = new_distance
+                zone = "fairway"
+
+                #print to make sure the layup is working
+                print(f"Forced layup: {actual_distance:.1f} yards -> {new_distance:.1f} yards")
+
             approach_group = select_approach_group(distance)
 
             if approach_group is not None: #make sure the zone exist
@@ -342,8 +364,8 @@ def optimize_approach_aimpoint(approach_situations, approach_dispersion, green_x
 
     results = []
 
-    for lateral_offset in range(-10, 11, 5):
-        for longitudinal_offset in range(-10, 11, 5):
+    for lateral_offset in range(-1, 1): #Values will be changed to (-5, 6)
+        for longitudinal_offset in range(-1, 1): #Values will be changed to (-5, 6)
 
             total_scores = []
 
@@ -386,7 +408,7 @@ def optimize_approach_aimpoint(approach_situations, approach_dispersion, green_x
                             longitudinal_offset
                         )
                     #Exlude zone if it is classified as "other"
-                    if zone == "other":
+                    if zone == "other": #the exact coordinates are not classified, therefore we cannot determine the landing zone
                         continue
 
                     distance = calculate_remaining_distance(
@@ -700,10 +722,10 @@ def main(player_name, csv_file):
     # Save optimization results to CSV
     player_file = player_name.lower().replace(" ", "_")
 
-    aimpoint_results.to_csv(
+    """aimpoint_results.to_csv(
         f"{player_file}_approach_optimization.csv",
         index=False
-    )
+    )"""
 
     # Print the optimal aimpoint
     print("\nBEST APPROACH AIMPOINT")
