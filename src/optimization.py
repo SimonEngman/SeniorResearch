@@ -117,7 +117,7 @@ def handle_ob(dispersion, aim_x, aim_y, angle, zones_yards):
     return np.asarray(landing_x)[0], np.asarray(landing_y)[0], landing_zone, penalty
 
 #Function handles approach shots that goes Out of Bounds (OB)
-def handle_approach_ob(landing_x, landing_y, approach_group, approach_dispersion, remaining_distance, green_x, green_y, zones_yards, lateral_offset=0, longitudinal_offset=0):
+def handle_approach_ob(landing_x, landing_y, approach_group, approach_dispersion, remaining_distance, pin_x, pin_y, zones_yards, lateral_offset=0, longitudinal_offset=0):
 
     landing_zone = "ob" #The ball is currently out of bounds
     penalty = 0 #Initialize penalty to 0
@@ -133,8 +133,8 @@ def handle_approach_ob(landing_x, landing_y, approach_group, approach_dispersion
             approach_group,
             approach_dispersion,
             remaining_distance,
-            green_x,
-            green_y,
+            pin_x,
+            pin_y,
             lateral_offset,
             longitudinal_offset
         )
@@ -242,10 +242,11 @@ def get_approach_situations(landing_x, landing_y, landing_zones, remaining_dista
                 dx = green_x - x
                 dy = green_y - y
 
+                actual_distance = np.hypot(dx, dy)
                 #Move the ball straight towards the green center
-                if distance > 0:
-                    x = green_x - (dx / distance) * new_distance
-                    y = green_y - (dy / distance) * new_distance
+                if actual_distance > 0:
+                    x = green_x - (dx / actual_distance) * new_distance
+                    y = green_y - (dy / actual_distance) * new_distance
 
                 distance = new_distance
                 zone = "fairway"
@@ -307,8 +308,8 @@ def simulate_approach(
     approach_group,
     approach_dispersion,
     remaining_distance,
-    green_x,
-    green_y,
+    pin_x,
+    pin_y,
     lateral_offset = 0,
     longitudinal_offset = 0
 ):
@@ -322,8 +323,8 @@ def simulate_approach(
     ]
 
     # Calculate direction from the ball to the green
-    dx = green_x - landing_x
-    dy = green_y - landing_y
+    dx = pin_x - landing_x
+    dy = pin_y - landing_y
 
     # Calculate the actual distance to the green to ensure a correct direction vector
     actual_distance = np.hypot(dx, dy)
@@ -343,13 +344,13 @@ def simulate_approach(
 
     # Calculate the new aimpoint relative to the pin
     aim_x = (
-        green_x
+        pin_x
         + lateral_offset * right_x
         + longitudinal_offset * forward_x
     )
 
     aim_y = (
-        green_y
+        pin_y
         + lateral_offset * right_y
         + longitudinal_offset * forward_y
     )
@@ -360,12 +361,12 @@ def simulate_approach(
 
     return approach_x, approach_y
 
-def optimize_approach_aimpoint(approach_situations, approach_dispersion, green_x, green_y, zones_yards):
+def optimize_approach_aimpoint(approach_situations, approach_dispersion, pin_x, pin_y, zones_yards):
 
     results = []
 
-    for lateral_offset in range(-1, 1): #Values will be changed to (-5, 6)
-        for longitudinal_offset in range(-1, 1): #Values will be changed to (-5, 6)
+    for lateral_offset in range(-15, -9): #Values will be changed to (-5, 6)
+        for longitudinal_offset in range(-5, 6): #Values will be changed to (-5, 6)
 
             total_scores = []
 
@@ -378,8 +379,8 @@ def optimize_approach_aimpoint(approach_situations, approach_dispersion, green_x
                     situation["approach_group"],
                     approach_dispersion,
                     situation["remaining_distance"],
-                    green_x,
-                    green_y,
+                    pin_x,
+                    pin_y,
                     lateral_offset,
                     longitudinal_offset
                 )
@@ -401,8 +402,8 @@ def optimize_approach_aimpoint(approach_situations, approach_dispersion, green_x
                             situation["approach_group"],
                             approach_dispersion,
                             situation["remaining_distance"],
-                            green_x,
-                            green_y,
+                            pin_x,
+                            pin_y,
                             zones_yards,
                             lateral_offset,
                             longitudinal_offset
@@ -412,7 +413,7 @@ def optimize_approach_aimpoint(approach_situations, approach_dispersion, green_x
                         continue
 
                     distance = calculate_remaining_distance(
-                        x, y, green_x, green_y
+                        x, y, pin_x, pin_y
                     )
 
                     row = {
@@ -487,7 +488,11 @@ def calculate_expected(row):
     elif zone == "water":
         drop_distance = distance + 4
         #the + 1 is the penalty
-        return 1 + get_expected_strokes("fairway", drop_distance)
+        try:
+            return 1 + get_expected_strokes("fairway", drop_distance)
+        except ValueError:
+            print(f"Invalid water drop distance: {drop_distance:.2f} yards")
+            raise
 
     #For other zone, return "Not a Number" (Different funtion needs to be implemented for water and OB)
     else:
@@ -510,6 +515,8 @@ def calculate_average_score(approach_results):
 
 
 def main(player_name, csv_file):
+    # Set a fixed random seed to ensure reproducible simulation results
+    np.random.seed(42)
     print(f"SIMULATION STARTED FOR {player_name}")
     print("=" * 40) 
     print(f"\n[1/8] Loading course data and {player_name}'s shot data...", flush=True)
@@ -532,11 +539,11 @@ def main(player_name, csv_file):
 
     # Test different horizontal offsets
     #THIS OFFSET IS USED FOR COMPLETE CALCULATION
-    offsets = list(range(-30, 31)) 
+    offsets = list(range(-30, -5)) 
     #THIS OFFSET IS USED DURING DEVELOPMENT FOR FASTER RUN TIME
     #offsets = [-30, -20, -10, 10, 20, 30]
 
-    #initialize most_fairwy_percentage to 0%
+    #initialize most_fairwy_percentage to 0%s
     most_fairway_percentage = -1
 
     #This variable will store the offset that produced the highest fairway percentage
@@ -626,23 +633,10 @@ def main(player_name, csv_file):
     #Identify the x and y coordinates of the green center
     green_x, green_y = green_center_coords
 
-    # Display the first 50 approach situations
-    """for situation in approach_situations[:50]:
-        print(situation)"""
-
-    #Plot player's dispersion on most fairway hits
-    """print("\n[3/8] Plotting best fairway aimpoint...", flush=True)
-    plot_course_map(
-    zones_yards,
-    (tee_x, tee_y),
-    green_center_coords,
-    landing_x,
-    landing_y,
-    best_aim_x,
-    best_aim_y,
-    player_name
-    )
-    """
+    # Estimated Sunday pin location
+    #Values manually collected in course_map.py
+    pin_x = 107.24792944472517
+    pin_y = 416.0641602611536
 
     #Plot the highest eval-score map
     best_aim_x = tee_x + best_evalscore_offset
@@ -714,18 +708,18 @@ def main(player_name, csv_file):
     aimpoint_results, best_approach = optimize_approach_aimpoint(
         approach_situations,
         approach_dispersion,
-        green_x,
-        green_y,
+        pin_x,
+        pin_y,
         zones_yards
     )
 
     # Save optimization results to CSV
     player_file = player_name.lower().replace(" ", "_")
 
-    """aimpoint_results.to_csv(
-        f"{player_file}_approach_optimization.csv",
+    aimpoint_results.to_csv(
+        f"{player_file}_sundaypin3_optimization.csv",
         index=False
-    )"""
+    )
 
     # Print the optimal aimpoint
     print("\nBEST APPROACH AIMPOINT")
@@ -751,8 +745,8 @@ def main(player_name, csv_file):
             situation["approach_group"],
             approach_dispersion,
             situation["remaining_distance"],
-            green_x,
-            green_y,
+            pin_x,
+            pin_y,
             int(best_approach["lateral_offset"]),
             int(best_approach["longitudinal_offset"])
         )
@@ -776,8 +770,8 @@ def main(player_name, csv_file):
                     situation["approach_group"],
                     approach_dispersion,
                     situation["remaining_distance"],
-                    green_x,
-                    green_y,
+                    pin_x,
+                    pin_y,
                     zones_yards,
                     int(best_approach["lateral_offset"]),
                     int(best_approach["longitudinal_offset"])
@@ -827,9 +821,9 @@ def main(player_name, csv_file):
         (green_x, green_y),
         plot_x,
         plot_y,
-        green_x,
-        green_y,
-        f"{player_name} - Simulated Approach Shots",
+        pin_x,
+        pin_y,
+        f"{player_name} - Shots",
         zoom=100
     )
 
@@ -855,8 +849,8 @@ def main(player_name, csv_file):
     approach_remaining_distances = calculate_remaining_distance(
         np.asarray(all_approach_x),
         np.asarray(all_approach_y),
-        green_x,
-        green_y
+        pin_x,
+        pin_y
     )
 
     print("Remaining Distances After Approach:")

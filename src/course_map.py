@@ -322,7 +322,8 @@ def plot_course_map(
     aim_x,
     aim_y,
     player_name,
-    zoom = None #Variable added so I can zoom in on approach
+    zoom = None,  # Variable added so I can zoom in on approach
+    pin_coords = None  # Variable added to allow for plotting of the pin location
 ):
 
     # Define colors for each course zone
@@ -391,6 +392,17 @@ def plot_course_map(
         s=40,
         label="Aim Point"
     )
+    # Plot the Sunday pin if provided
+    if pin_coords is not None:
+        ax.scatter(
+            pin_coords[0],
+            pin_coords[1],
+            color="red",
+            marker="*",
+            s=150,
+            label="Sunday Pin",
+            zorder=10
+        )
 
     ax.set_title("Augusta National - Hole 13 Course Zones")
     ax.set_aspect("equal")
@@ -407,6 +419,65 @@ def plot_course_map(
         ax.set_ylim(green_center_coords[1] - zoom, green_center_coords[1] + zoom)
 
     plt.show()
+
+#Function is allowing to determine decided pin location by clicking on it
+#The coordinates will then be used as the simulated pin location
+def select_pin_location(zones_yards):
+    green_x, green_y = get_zone_center(zones_yards, "green")
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # Plot course zones
+    zones_yards.plot(
+        ax=ax,
+        column="zone_type",
+        alpha=0.7,
+        edgecolor="black"
+    )
+
+    # Zoom in on the green
+    ax.set_xlim(green_x - 40, green_x + 40)
+    ax.set_ylim(green_y - 40, green_y + 40)
+
+    # Mark green center
+    ax.scatter(
+        green_x, green_y,
+        color="red",
+        marker="*",
+        s=150,
+        label="Green Center"
+    )
+
+    ax.set_aspect("equal")
+    ax.set_title("Click the Sunday Pin Location")
+    ax.legend()
+
+    plt.draw()
+
+    # Wait for one click
+    selected = plt.ginput(1, timeout=0)
+
+    if not selected:
+        plt.close(fig)
+        raise ValueError("No pin location selected.")
+
+    pin_x, pin_y = selected[0]
+
+    # Check that selected point is actually on the green
+    green_polygon = zones_yards.loc[
+        zones_yards["zone_type"] == "green", "geometry"
+    ].union_all()
+
+    if not green_polygon.covers(Point(pin_x, pin_y)):
+        plt.close(fig)
+        raise ValueError("Selected pin is outside the green.")
+
+    print(f"Sunday Pin Coordinates: ({pin_x:.2f}, {pin_y:.2f})")
+
+    plt.close(fig)
+
+    return pin_x, pin_y
+
 
 
 # Main function to run the course map analysis
@@ -432,6 +503,13 @@ def main():
 
     print("\nTee Center Coordinates (yards):", tee_center_coords)
     print("Green Center Coordinates (yards):", green_center_coords)
+
+    # Select Sunday pin from course map
+    sunday_pin_x, sunday_pin_y = select_pin_location(zones_yards)
+
+    print("Selected Sunday Pin:")
+    print("X:", sunday_pin_x)
+    print("Y:", sunday_pin_y)
 
     # Select the player
     player_name = "Rory McIlroy"
@@ -505,6 +583,8 @@ def main():
         aim_y,
         player_name
     )
+
+
 
 if __name__ == "__main__":
     main()

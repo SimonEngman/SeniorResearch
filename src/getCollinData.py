@@ -101,9 +101,8 @@ if all_shots:
         index=False
     )
 
-    print("\n==============================")
     print("DATA COLLECTION COMPLETE")
-    print("==============================")
+    print("_________________________________")
 
     print("Total shots:", len(collin_shots))
     print("Successful tournaments:", len(successful_tournaments))

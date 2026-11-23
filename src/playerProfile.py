@@ -1,7 +1,7 @@
 import pandas as pd
 
 #Load the PGA_data_tourlevel.csv 
-sg_data = pd.read_csv("data/PGA_data_tourlevel.csv")
+sg_data = pd.read_csv("data/PGA_data_tourlevel.csv") #Shots gained data
 
 #Load Rory Mcilroy's data
 rory_shots = pd.read_csv("data/rory_2025_shots.csv")

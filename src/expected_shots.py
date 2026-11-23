@@ -51,6 +51,7 @@ def get_expected_putts(d_feet):
     return 2 - p1 + p3
 
 #The function uses linear interpolation and allows us tho calculate
+#Linear extrapolation is used for values < 10 (Only really needed for sunday pin calculations since the flag is closer to the water)
 #expected shots that are not 10, 20, 30 yards etc
 def get_expected_strokes(zone, distance_yards):
     if zone not in EXPECTED_SHOTS:
@@ -63,6 +64,14 @@ def get_expected_strokes(zone, distance_yards):
 
     distances = np.array(sorted(data.keys()))
     strokes = np.array([data[d] for d in distances])
+
+     # Linear extrapolation for distances below 10 yards
+    if distance_yards < distances[0]:
+        x1, x2 = distances[0], distances[1]
+        y1, y2 = strokes[0], strokes[1]
+
+        return y1 + (distance_yards - x1) * (y2 - y1) / (x2 - x1)
+
 
     if distance_yards < distances[0] or distance_yards > distances[-1]:
         raise ValueError("Distance outside available data range")

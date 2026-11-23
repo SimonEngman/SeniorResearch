@@ -386,16 +386,16 @@ def plot_central_dispersion(tee_shots, player_name):
         (data["down_hole_yards"] - center_y)**2
     )
 
-    # Find radius containing closest 70%
+    # Find radius containing closest 90%
     radius = data["distance_from_center"].quantile(0.90)
 
-    # Keep closest 70%
-    middle_70 = data[
+    # Keep closest 90%
+    middle_90 = data[
         data["distance_from_center"] <= radius
     ]
 
     print(
-        f"{player_name} - Central 70% radius:",
+        f"{player_name} - Central 90% radius:",
         round(radius, 1), "yards"
     )
 
@@ -403,8 +403,8 @@ def plot_central_dispersion(tee_shots, player_name):
     plt.figure(figsize=(8, 8))
 
     plt.scatter(
-        middle_70["offline_yards"],
-        middle_70["down_hole_yards"],
+        middle_90["offline_yards"],
+        middle_90["down_hole_yards"],
         alpha=0.5
     )
 
@@ -474,19 +474,19 @@ def filter_approach_shots(shots):
         approach_shots["yardage"].apply(to_yards)
     )
 
-    # Identify each hole in each round
+    #Identify each hole in each round
     group_cols = [
         "tournament_id",
         "round_number",
         "hole_number"
     ]
 
-    # Sort shots in playing order
+    #Sort shots in playing order
     approach_shots = approach_shots.sort_values(
         group_cols + ["stroke_number"]
     )
 
-    # Previous shot's remaining distance = current starting distance
+    #Previous shot's remaining distance = current starting distance
     approach_shots["starting_distance"] = (
         approach_shots.groupby(group_cols)["remaining_yards"].shift(1)
     )
@@ -501,7 +501,7 @@ def filter_approach_shots(shots):
         approach_shots.loc[par3_tee, "hole_yards"]
     )
 
-    # Keep approach shots and par 3 tee shots
+    #Keep approach shots and par 3 tee shots
     approach_shots = approach_shots[
         (approach_shots["stroke_number"] > 1) | par3_tee
     ].copy()
@@ -658,10 +658,9 @@ def calculate_approach_dispersion(approach_shots, targets):
     data["shot_yards"] = data["distance"].apply(convert_to_yards)
     data["remaining_yards"] = data["distance_remaining"].apply(convert_to_yards)
 
-    # Triangle sides:
-    # a = starting distance to flag
-    # b = shot distance
-    # c = remaining distance to flag
+    #a = starting distance to flag
+    #b = shot distance
+    #c = remaining distance to flag
     a = data["starting_distance"]
     b = data["shot_yards"]
     c = data["remaining_yards"]
@@ -675,11 +674,6 @@ def calculate_approach_dispersion(approach_shots, targets):
     # Perpendicular distance from the target line
     offline_squared = b**2 - down_target**2
 
-    #This could lead to some shots being straight even though they are offline
-    #Therefore, I have commented it out for now
-    """data["offline_yards"] = np.sqrt(
-        np.maximum(offline_squared, 0)
-    ) """
     #The offline distance is now calculated in the next step, but it will be flagged if the triangle is invalid
     # Flag shots with inconsistent distance measurements
     data["invalid_triangle"] = offline_squared < -1e-6
@@ -929,6 +923,7 @@ def plot_central_approach_dispersion(approach_dispersion, player_name, min_dista
     plt.show()
 
     print(f"\n--- {player_name} Central 90% ---")
+    print(f"Distance range: {min_distance}-{max_distance} yards")
     print("Original shots:", len(data))
     print("Shots in central 90%:", len(central))
     print("90% radius:", round(threshold, 2), "yards")

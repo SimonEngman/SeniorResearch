@@ -23,7 +23,7 @@ for index, row in results.iterrows():
     print("Tournament ID:", tournament_id)
 
     if pd.isna(tournament_id):
-        print("Skipping - no tournament ID")
+        print("Skipping - no tournament ID") 
         continue
 
     tournament_shots = []
@@ -101,9 +101,9 @@ if all_shots:
         index=False
     )
 
-    print("\n==============================")
+
     print("DATA COLLECTION COMPLETE")
-    print("==============================")
+    print("_________________________________")
 
     print("Total shots:", len(rory_shots))
     print("Successful tournaments:", len(successful_tournaments))

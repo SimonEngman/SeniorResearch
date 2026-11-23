@@ -1,3 +1,5 @@
+#TURNED OUT I DIDNT USE THE APP STYLE FOR VISUALIZATION
+#BUT I THINK IT IS A GOOD IDEA TO KEEP IT HERE FOR REFERENCE
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
